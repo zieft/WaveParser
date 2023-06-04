@@ -1,16 +1,52 @@
-filepath = r'C:\Users\zieft\Desktop\testdataset\smallTexture\texturedMesh.obj'
+wavefront_filepath = r'C:\Users\zieft\Desktop\testdataset\smallTexture\texturedMesh.obj'
+texture_filepath = r'C:\Users\zieft\Desktop\testdataset\smallTexture\texture_1001.png'
 import numpy as np
 import cv2
 
 
 class TPixel:
-    def __init__(self):
-        self.inensity = 0
+    def __init__(self, intensity, uv):
+        self.intensity = intensity
+        self.UV = uv
+        self.uv_index = None
+        self.coor = None
+
+    def __repr__(self):
+        return str(self.intensity)
+
+    def __str__(self):
+        return str(self.intensity)
 
 
 class TFace:
     def __init__(self):
         self.edge = []
+
+
+class TextrueObj:
+    def __init__(self, filepath):
+        self.filepath = filepath
+        self.img = self.img_read()
+        self.pixelized_img = self.init_pixels()
+
+    def img_read(self):
+        img = cv2.imread(self.filepath, cv2.IMREAD_GRAYSCALE)
+        return img
+
+    def init_pixels(self):
+        img = np.zeros((4096, 4096), dtype='O')
+        for i in range(img.shape[0]):
+            for j in range(img.shape[1]):
+                u = j / self.img.shape[0]
+                v = i / self.img.shape[1]
+                if self.img[i][j] == 0:
+                    img[i][j] = 0
+                else:
+                    img[i][j] = TPixel(
+                        intensity=self.img[i][j],
+                        uv=(u, v)
+                    )
+        return img
 
 
 class WVertex:
@@ -128,7 +164,7 @@ class WavefrontObj:
 # import pywavefront
 #
 # scene = pywavefront.Wavefront(
-#     filepath,
+#     wavefront_filepath,
 #     strict=False,
 #     encoding="iso-8859-1",
 #     parse=False,
@@ -140,7 +176,7 @@ class WavefrontObj:
 # faces_dict = {}
 # for i in vertices_dict:
 #     vertices_dict[i] = WVertex(vertices_dict[i])
-# with open(filepath, 'r') as f:
+# with open(wavefront_filepath, 'r') as f:
 #     line = f.readline()
 #     face_index = 1
 #     while line:
@@ -169,4 +205,5 @@ class WavefrontObj:
 #         line = f.readline()
 #
 if __name__ == '__main__':
-    obj = WavefrontObj(filepath)
+    obj = WavefrontObj(wavefront_filepath)
+    txt = TextrueObj(texture_filepath)
