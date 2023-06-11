@@ -2,6 +2,7 @@ wavefront_filepath = r'C:\Users\zieft\Desktop\testdataset\smallTexture\texturedM
 texture_filepath = r'C:\Users\zieft\Desktop\testdataset\smallTexture\texture_1001.png'
 import numpy as np
 import cv2
+import math
 
 
 class TPixel:
@@ -43,6 +44,16 @@ class TextrueObj:
                 img[i][j] = pix
         return img
 
+    # def init_pixels(self):
+    #     img = np.zeros((4096, 4096), dtype='O')
+    #     u = np.arange(img.shape[1]) / img.shape[0]
+    #     v = np.arange(img.shape[0]) / img.shape[1]
+    #     u, v = np.meshgrid(u, v)
+    #     pix = TPixel(intensity=self.img, uv=(u, v))
+    #     pix.uv_pixel_index = np.indices(img.shape).swapaxes(0, 2).swapaxes(0, 1)
+    #     img[:, :] = pix
+    #     return img
+
 
 class WVertex:
     def __init__(self, coor):
@@ -76,6 +87,33 @@ class WVertex:
         self.faces.append(face)
 
 
+class WEdge:
+    existent = {}
+
+    def __init__(self):
+        self.eindex = None
+        self.vertices = []
+        self.mid_point_UV = ()
+        self.angle = None  # 从水平线逆时针旋转到该边所扫过的夹角,degrees
+        self.faces = []
+
+    def find_mid_point_and_angle(self):
+        A = self.vertices[0].UVs[0]
+        B = self.vertices[1].UVs[0]
+
+        self.mid_point_UV = ((A[0] + B[0]) / 2, (A[1] + B[1]) / 2)
+
+        x1, y1 = A
+        x2, y2 = B
+
+        if x2 - x1 == 0:
+            self.angle = 90
+        else:
+            m = (y2 - y1) / (x2 - x1)
+            radians = math.atan(m)
+            self.angle = math.degrees(radians)
+
+
 class WFace:
     def __init__(self):
         """
@@ -86,6 +124,8 @@ class WFace:
         self.area = None
         self.pixels = None
         self.mapping_matrix = None
+        self.edges = None
+        self.aready_drawn = False
         # self.texture_uv = [(), ()]  不需要额外记录uv，因为vertex自带uv
 
     def __str__(self):
@@ -315,13 +355,15 @@ class WFace:
         # 求解矩阵
         self.mapping_matrix = np.linalg.solve(coeff_matrix, const_matrix)
 
+
 class WavefrontObj:
     def __init__(self, wavefront_path, texture_path):
         self.texture = TextrueObj(texture_path)
         self.filepath = wavefront_path
         self.vertices_dict = self.parse_vertices_dict()
         self.UVs_dict = self.parse_uvs_dict()
-        self.faces_dict = self.parse_faces()
+        self.edges_dict = {}
+        self.faces_dict = self.parse_faces_edges()
 
     def parse_vertices_dict(self):
         import pywavefront
@@ -355,10 +397,11 @@ class WavefrontObj:
 
         return UVs_dict
 
-    def parse_faces(self):
+    def parse_faces_edges(self):
         with open(self.filepath, 'r') as f:
             line = f.readline()
             face_index = 1
+            edge_index = 1
             faces_dict = {}
             while line:
                 if line.startswith('f'):
@@ -380,6 +423,24 @@ class WavefrontObj:
                     face = WFace()
                     face.findex = face_index
                     face.vertices = wvertices
+                    for i in range(len(face.vertices)):
+                        for j in range(i + 1, len(face.vertices)):
+                            ver_index_i = face.vertices[i].ver_index
+                            ver_index_j = face.vertices[j].ver_index
+                            if '{},{}'.format(ver_index_i, ver_index_j) not in WEdge.existent:
+                                edge = WEdge()
+                                edge.eindex = edge_index
+                                WEdge.existent['{},{}'.format(ver_index_i, ver_index_j)] = edge.eindex
+                                WEdge.existent['{},{}'.format(ver_index_j, ver_index_i)] = edge.eindex
+                                self.edges_dict[edge.eindex] = edge
+                                edge.vertices.append(self.vertices_dict.get(ver_index_i))
+                                edge.vertices.append(self.vertices_dict.get(ver_index_j))
+                                edge_index += 1
+                            else:
+                                edge = self.edges_dict[WEdge.existent['{},{}'.format(ver_index_i, ver_index_j)]]
+                            edge.faces.append(face)
+                            edge.find_mid_point_and_angle()
+
                     texture_shape = self.texture.img.shape
                     face.determine_mapping_matrix_2d_to_3d()
                     face.cal_area(texture_shape)
@@ -391,5 +452,15 @@ class WavefrontObj:
         return faces_dict
 
 
+class NewUVUnwrap:
+    def __init__(self):
+        self.img = np.zeros((4096, 4096))
+
+
 if __name__ == '__main__':
     obj = WavefrontObj(wavefront_filepath, texture_filepath)
+    # a = NewUV()
+    # cv2.imshow('123', a.img)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+    newUV = NewUVUnwrap()
