@@ -1,5 +1,3 @@
-import math
-
 wavefront_filepath = r'C:\Users\zieft\Desktop\testdataset\smallTexture\texturedMesh.obj'
 texture_filepath = r'C:\Users\zieft\Desktop\testdataset\smallTexture\texture_1001.png'
 import numpy as np
@@ -10,7 +8,7 @@ class TPixel:
     def __init__(self, intensity, uv):
         self.intensity = intensity
         self.UV = uv
-        self.uv_pixel_index = None
+
         self.coor = None
         self.face = None
 
@@ -37,15 +35,12 @@ class TextrueObj:
             for j in range(img.shape[1]):
                 u = j / self.img.shape[0]
                 v = i / self.img.shape[1]
-                if self.img[i][j] == 0:
-                    img[i][j] = 0
-                else:
-                    pix = TPixel(
-                        intensity=self.img[i][j],
-                        uv=(u, v)
-                    )
-                    pix.uv_pixel_index = (i, j)
-                    img[i][j] = pix
+                pix = TPixel(
+                    intensity=self.img[i][j],
+                    uv=(u, v)
+                )
+                pix.uv_pixel_index = (i, j)
+                img[i][j] = pix
         return img
 
 
@@ -87,9 +82,10 @@ class WFace:
         vertices: list of 3 WVertex objects.
         """
         self.findex = 0
-        self.vertices = []
+        self.vertices = None
         self.area = None
         self.pixels = None
+        self.mapping_matrix = None
         # self.texture_uv = [(), ()]  不需要额外记录uv，因为vertex自带uv
 
     def __str__(self):
@@ -169,7 +165,8 @@ class WFace:
 
         self.pixels = pixels
 
-    def _cross_product(self, v1, v2):
+    @staticmethod
+    def _cross_product(v1, v2):
         # 计算向量 v1 和向量 v2 的叉积
         return v1[0] * v2[1] - v1[1] * v2[0]
 
@@ -195,7 +192,8 @@ class WFace:
         # 判断点 p 是否在三角形内部
         return (c1 >= 0 and c2 >= 0 and c3 >= 0) or (c1 <= 0 and c2 <= 0 and c3 <= 0)
 
-    def _cross_product_vec(self, v1, v2):
+    @staticmethod
+    def _cross_product_vec(v1, v2):
         # 计算向量的叉积
         return v1[..., 0] * v2[..., 1] - v1[..., 1] * v2[..., 0]
 
@@ -243,10 +241,10 @@ class WFace:
 
         self.pixels = triangle_pixels
 
-    def find_pixels_crossproduct_vec(self):
-        p1 = (round(self.vertices[0].UVs[0][0] * 4096), round(self.vertices[0].UVs[0][1] * 4096))
-        p2 = (round(self.vertices[1].UVs[0][0] * 4096), round(self.vertices[1].UVs[0][1] * 4096))
-        p3 = (round(self.vertices[2].UVs[0][0] * 4096), round(self.vertices[2].UVs[0][1] * 4096))
+    def find_pixels_crossproduct_vec(self, pixelized_img):
+        p1 = (round(self.vertices[0].UVs[0][0] * 4096), 4096 - round(self.vertices[0].UVs[0][1] * 4096))
+        p2 = (round(self.vertices[1].UVs[0][0] * 4096), 4096 - round(self.vertices[1].UVs[0][1] * 4096))
+        p3 = (round(self.vertices[2].UVs[0][0] * 4096), 4096 - round(self.vertices[2].UVs[0][1] * 4096))
 
         min_x = np.min([p1[0], p2[0], p3[0]])
         max_x = np.max([p1[0], p2[0], p3[0]])
@@ -259,10 +257,63 @@ class WFace:
         mask = self._point_in_triangle_vec(X, Y, p1, p2, p3)
 
         # 提取在三角形内的像素坐标
-        triangle_pixels = np.column_stack((X[mask], Y[mask]))
+        triangle_pixel_UV = np.column_stack((X[mask], Y[mask]))
+        triangle_pixels = []
+        for i in triangle_pixel_UV:
+            pixel_instance = pixelized_img[i[0], i[1]]
+            uv = list(pixel_instance.UV) + [1]
+            pixel_instance.coor = np.dot(self.mapping_matrix, np.array(uv))
+            pixel_instance.face = self
+            triangle_pixels.append(pixel_instance)
 
         self.pixels = triangle_pixels
 
+    def determine_mapping_matrix_3d_to_2d(self):
+        # 三维空间中三个点的坐标
+        A = np.array(self.vertices[0].coor)
+        B = np.array(self.vertices[1].coor)
+        C = np.array(self.vertices[2].coor)
+
+        # 构造系数矩阵
+        coeff_matrix = np.vstack((A, B))
+        coeff_matrix = np.vstack((coeff_matrix, C))
+
+        # 二维平面上的映射点坐标
+        P = self.vertices[0].UVs[0]
+        Q = self.vertices[1].UVs[0]
+        W = self.vertices[2].UVs[0]
+
+        # 构造常数矩阵
+        const_matrix = np.vstack((P, Q))
+        const_matrix = np.vstack((const_matrix, W))
+
+        # 求解矩阵
+        self.mapping_matrix = np.linalg.solve(coeff_matrix, const_matrix)
+
+    def determine_mapping_matrix_2d_to_3d(self):
+        # 三维空间中三个点的坐标
+        A = np.array(self.vertices[0].coor)
+        B = np.array(self.vertices[1].coor)
+        C = np.array(self.vertices[2].coor)
+
+        # 构造常数矩阵
+        const_matrix = np.vstack((A, B))
+        const_matrix = np.vstack((const_matrix, C))
+
+        # 二维平面上的映射点坐标
+        P = list(self.vertices[0].UVs[0])
+        Q = list(self.vertices[1].UVs[0])
+        W = list(self.vertices[2].UVs[0])
+        P += [1]
+        Q += [1]
+        W += [1]
+
+        # 构造系数矩阵
+        coeff_matrix = np.vstack((P, Q))
+        coeff_matrix = np.vstack((coeff_matrix, W))
+
+        # 求解矩阵
+        self.mapping_matrix = np.linalg.solve(coeff_matrix, const_matrix)
 
 class WavefrontObj:
     def __init__(self, wavefront_path, texture_path):
@@ -330,8 +381,9 @@ class WavefrontObj:
                     face.findex = face_index
                     face.vertices = wvertices
                     texture_shape = self.texture.img.shape
+                    face.determine_mapping_matrix_2d_to_3d()
                     face.cal_area(texture_shape)
-                    face.find_pixels_crossproduct_vec()
+                    face.find_pixels_crossproduct_vec(self.texture.pixelized_img)
                     faces_dict[face_index] = face
                     face_index += 1
 
