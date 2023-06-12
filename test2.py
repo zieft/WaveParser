@@ -65,10 +65,10 @@ class WVertex:
         self.faces = []  # list of WFace objects. 表示此顶点属于哪些面
 
     def __str__(self):
-        return '顶点：' + str(self.ver_index)
+        return 'Ver：' + str(self.ver_index)
 
     def __repr__(self):
-        return '顶点：' + str(self.ver_index)
+        return 'Ver：' + str(self.ver_index)
 
     def ver_index_setter(self, index):
         self.ver_index = index
@@ -97,6 +97,12 @@ class WEdge:
         self.angle = None  # 从水平线逆时针旋转到该边所扫过的夹角,degrees
         self.faces = []
 
+    def __repr__(self):
+        return "Edge: {} with vertices {}".format(self.eindex, self.vertices)
+
+    def __str__(self):
+        return "Edge: {} with vertices {}".format(self.eindex, self.vertices)
+
     def find_mid_point_and_angle(self):
         A = self.vertices[0].UVs[0]
         B = self.vertices[1].UVs[0]
@@ -106,12 +112,13 @@ class WEdge:
         x1, y1 = A
         x2, y2 = B
 
-        if x2 - x1 == 0:
-            self.angle = 90
-        else:
-            m = (y2 - y1) / (x2 - x1)
-            radians = math.atan(m)
-            self.angle = math.degrees(radians)
+        length_ab = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+
+        direction_ab = [(x2 - x1) / length_ab, (y2 - y1) / length_ab]
+
+        rotation_angle = math.degrees(math.atan2(direction_ab[1], direction_ab[0]))
+
+        self.angle = rotation_angle
 
 
 class WFace:
@@ -124,12 +131,16 @@ class WFace:
         self.area = None
         self.pixels = None
         self.mapping_matrix = None
-        self.edges = None
+        self.edges = []
         self.aready_drawn = False
+        self.valid_UV_index = None
         # self.texture_uv = [(), ()]  不需要额外记录uv，因为vertex自带uv
 
     def __str__(self):
-        return '面:' + str(self.findex) + '，顶点为：' + str(self.vertices)
+        return 'Face:' + str(self.findex) + '，Vertices：' + str(self.vertices)
+
+    def __repr__(self):
+        return 'Face:' + str(self.findex) + '，Vertices：' + str(self.vertices)
 
     def cal_area(self, texture_shape):
         p1 = tuple(int(round(x * texture_shape[0])) for x in self.vertices[0].UVs[0])
@@ -341,9 +352,9 @@ class WFace:
         const_matrix = np.vstack((const_matrix, C))
 
         # 二维平面上的映射点坐标
-        P = list(self.vertices[0].UVs[0])
-        Q = list(self.vertices[1].UVs[0])
-        W = list(self.vertices[2].UVs[0])
+        P = list(self.vertices[0].UVs[self.valid_UV_index['vertex_0']])
+        Q = list(self.vertices[1].UVs[self.valid_UV_index['vertex_1']])
+        W = list(self.vertices[2].UVs[self.valid_UV_index['vertex_2']])
         P += [1]
         Q += [1]
         W += [1]
@@ -354,6 +365,39 @@ class WFace:
 
         # 求解矩阵
         self.mapping_matrix = np.linalg.solve(coeff_matrix, const_matrix)
+
+    def determine_valid_UV_index(self):
+        """ determine the distances between 3 vertices """
+        for i in range(4):
+            for j in range(4):
+                for k in range(4):
+                    try:
+                        ver1 = (self.vertices[0].UVs[i][0] * 4096, self.vertices[0].UVs[i][1] * 4096)
+                    except IndexError:
+                        continue
+                    try:
+                        ver2 = (self.vertices[1].UVs[j][0] * 4096, self.vertices[1].UVs[j][1] * 4096)
+                    except IndexError:
+                        continue
+                    try:
+                        ver3 = (self.vertices[2].UVs[k][0] * 4096, self.vertices[2].UVs[k][1] * 4096)
+                    except IndexError:
+                        continue
+
+                    dis1 = math.sqrt((ver2[0] - ver1[0]) ** 2 + (ver2[1] - ver1[1]) ** 2)
+                    dis2 = math.sqrt((ver3[0] - ver1[0]) ** 2 + (ver3[1] - ver1[1]) ** 2)
+                    dis3 = math.sqrt((ver2[0] - ver3[0]) ** 2 + (ver2[1] - ver3[1]) ** 2)
+
+
+                    if dis1 < 100 and dis2 < 100 and dis3 < 100:
+                        self.valid_UV_index = {
+                            'vertex_0': i,
+                            'vertex_1': j,
+                            'vertex_2': k,
+                        }
+                        return
+
+        raise TypeError("未找到合适的ijk")
 
 
 class WavefrontObj:
@@ -423,6 +467,8 @@ class WavefrontObj:
                     face = WFace()
                     face.findex = face_index
                     face.vertices = wvertices
+                    face.determine_valid_UV_index()
+
                     for i in range(len(face.vertices)):
                         for j in range(i + 1, len(face.vertices)):
                             ver_index_i = face.vertices[i].ver_index
@@ -440,6 +486,7 @@ class WavefrontObj:
                                 edge = self.edges_dict[WEdge.existent['{},{}'.format(ver_index_i, ver_index_j)]]
                             edge.faces.append(face)
                             edge.find_mid_point_and_angle()
+                            face.edges.append(edge)
 
                     texture_shape = self.texture.img.shape
                     face.determine_mapping_matrix_2d_to_3d()
@@ -453,14 +500,42 @@ class WavefrontObj:
 
 
 class NewUVUnwrap:
-    def __init__(self):
+    def __init__(self, wavefront_obj):
+        self.wavefront_obj = wavefront_obj
         self.img = np.zeros((4096, 4096))
+
+
+def get_vertices(index):
+    ver = obj.vertices_dict[index]
+
+    print(ver.UVs[0][0] * 4096, 4096 - ver.UVs[0][1] * 4096)
+
+
+def get_edge(ver1, ver2):
+    index = WEdge.existent["{},{}".format(ver1, ver2)]
+    edge = obj.edges_dict[index]
+    print(edge, edge.mid_point_UV)
 
 
 if __name__ == '__main__':
     obj = WavefrontObj(wavefront_filepath, texture_filepath)
-    # a = NewUV()
-    # cv2.imshow('123', a.img)
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
-    newUV = NewUVUnwrap()
+    newUV = NewUVUnwrap(obj)
+    attach_point = np.array((2048, 2048))
+    attach_angle = 0
+    for edge in newUV.wavefront_obj.edges_dict.values():
+        translation_vector = np.array(edge.mid_point_UV) - attach_point
+        rotation_matrix = np.eye(3)
+        if len(edge.faces) > 1:
+            for face in edge.faces:
+                if not face.aready_drawn:
+                    for pixel in face.pixels:
+                        rotated_UV = rotation_matrix.dot(np.array(pixel.UV))
+                        translated_UV = rotated_UV + translation_vector
+                        newUV.img[translated_UV] = pixel
+                    face.aready_drawn = True
+
+obj.faces_dict[3233].vertices
+
+obj.faces_dict[3313].vertices
+
+obj.faces_dict[3313].edges
