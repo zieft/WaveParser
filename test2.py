@@ -1,10 +1,8 @@
-wavefront_filepath = r'C:\Users\zieft\Desktop\testdataset\smallTexture\texturedMesh.obj'
-texture_filepath = r'C:\Users\zieft\Desktop\testdataset\smallTexture\texture_1001.png'
+wavefront_filepath = './testdataset/smallTexture/texturedMesh.obj'
+texture_filepath = './testdataset/smallTexture/texture_1001.png'
 import numpy as np
 import cv2
 import math
-import sys
-sys.setrecursionlimit(5000)
 
 class TPixel:
     def __init__(self, intensity, uv):
@@ -517,28 +515,63 @@ def get_edge(ver1, ver2):
     print(edge, edge.mid_point_UV)
 
 
-def dfs(face: WFace):
+def dfs_recursive(face: WFace):
+    """ causing statck overflow """
     edge_1 = face.edges[0]
     edge_2 = face.edges[1]
     edge_3 = face.edges[2]
 
-    if not face.already_drawn:
-        # todo: draw face
-        face.already_drawn = True
-    else:
+    if face.already_drawn:
         return
+
+    # todo: draw face
+    face.already_drawn = True
 
     for edge in face.edges:
         if len(edge.faces) == 2:
-            dfs(edge.faces[0])
-            dfs(edge.faces[1])
+            dfs_recursive(edge.faces[0])
+            dfs_recursive(edge.faces[1])
         else:
             continue
+    return
 
+
+def dfs_iteration(face: WFace):
+    """"""
+    stack = [face]
+    stack_len = 0
+    while stack:
+        current_face = stack.pop()
+
+        if not current_face.already_drawn:
+            # todo: draw face
+            current_face.already_drawn = True
+
+        for edge in current_face.edges:
+            if len(edge.faces) == 2:
+                for adjacent_face in edge.faces:
+                    if not adjacent_face.already_drawn:
+                        stack.append(adjacent_face)
+        stack_len = max(stack_len, len(stack))
+    return stack_len
+
+def check_if_all_faces_drawn(obj: WavefrontObj):
+    # status = []
+    # for face in obj.faces_dict.values():
+    #     if face.already_drawn:
+    #         status.append(True)
+    #     else:
+    #         status.append(False)
+    # return status
+
+    status = np.array([face.already_drawn for face in obj.faces_dict.values()], dtype=bool)
+    return status
 
 if __name__ == '__main__':
     obj = WavefrontObj(wavefront_filepath, texture_filepath)
-    dfs(obj.faces_dict[1])
+    stack_len = dfs_iteration(obj.faces_dict[1])
+    status = check_if_all_faces_drawn(obj)
+
 
     newUV = NewUVUnwrap(obj)
     attach_point = np.array((2048, 2048))
