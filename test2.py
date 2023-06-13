@@ -4,6 +4,7 @@ import numpy as np
 import cv2
 import math
 
+
 class TPixel:
     def __init__(self, intensity, uv):
         self.intensity = intensity
@@ -92,9 +93,9 @@ class WEdge:
     def __init__(self):
         self.eindex = None
         self.vertices = []
-        self.mid_point_UV = ()
-        self.angle = None  # 从水平线逆时针旋转到该边所扫过的夹角,degrees
-        self.faces = []
+        self.mid_point_UV = {}  # 边在不同面中的中心点是不同的
+        self.angle = {}  # 从水平线逆时针旋转到该边所扫过的夹角,degrees
+        self.faces = []  # TODO：重构faces成字典，用来记录该条边在每个面中使用哪种UV坐标
 
     def __repr__(self):
         return "Edge: {} with vertices {}".format(self.eindex, self.vertices)
@@ -102,11 +103,11 @@ class WEdge:
     def __str__(self):
         return "Edge: {} with vertices {}".format(self.eindex, self.vertices)
 
-    def find_mid_point_and_angle(self):
-        A = self.vertices[0].UVs[0]
-        B = self.vertices[1].UVs[0]
+    def find_mid_point_and_angle(self, face):
+        A = self.vertices[0].UVs[face.valid_UV_index['vertex_{}'.format(self.vertices[0].ver_index)]]
+        B = self.vertices[1].UVs[face.valid_UV_index['vertex_{}'.format(self.vertices[1].ver_index)]]
 
-        self.mid_point_UV = ((A[0] + B[0]) / 2, (A[1] + B[1]) / 2)
+        self.mid_point_UV['face_{}'.format(face.findex)] = ((A[0] + B[0]) / 2, (A[1] + B[1]) / 2)
 
         x1, y1 = A
         x2, y2 = B
@@ -117,7 +118,7 @@ class WEdge:
 
         rotation_angle = math.degrees(math.atan2(direction_ab[1], direction_ab[0]))
 
-        self.angle = rotation_angle
+        self.angle['face_{}'.format(face.findex)] = rotation_angle
 
 
 class WFace:
@@ -142,9 +143,12 @@ class WFace:
         return 'Face:' + str(self.findex) + '，Vertices：' + str(self.vertices)
 
     def cal_area(self, texture_shape):
-        p1 = tuple(int(round(x * texture_shape[0])) for x in self.vertices[0].UVs[0])
-        p2 = tuple(int(round(x * texture_shape[0])) for x in self.vertices[1].UVs[0])
-        p3 = tuple(int(round(x * texture_shape[0])) for x in self.vertices[2].UVs[0])
+        p1 = tuple(int(round(x * texture_shape[0])) for x in
+                   self.vertices[0].UVs[self.valid_UV_index['vertex_{}'.format(self.vertices[0].ver_index)]])
+        p2 = tuple(int(round(x * texture_shape[0])) for x in
+                   self.vertices[1].UVs[self.valid_UV_index['vertex_{}'.format(self.vertices[1].ver_index)]])
+        p3 = tuple(int(round(x * texture_shape[0])) for x in
+                   self.vertices[2].UVs[self.valid_UV_index['vertex_{}'.format(self.vertices[2].ver_index)]])
 
         vertices = sorted([p1, p2, p3], key=lambda p: p[1])
 
@@ -158,62 +162,62 @@ class WFace:
 
         self.area = 0.5 * abs((x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2)))
 
-    def find_pixels(self, texture_shape):
-        # 对三个点按照纵坐标从小到大排序
-        p1 = tuple(int(round(x * texture_shape[0])) for x in self.vertices[0].UVs[0])
-        p2 = tuple(int(round(x * texture_shape[0])) for x in self.vertices[1].UVs[0])
-        p3 = tuple(int(round(x * texture_shape[0])) for x in self.vertices[2].UVs[0])
-
-        vertices = sorted([p1, p2, p3], key=lambda p: p[1])
-
-        # 提取三个点的坐标和纵坐标范围
-        y_min = vertices[0][1]
-        y_max = vertices[2][1]
-
-        x1, y1 = vertices[0]
-        x2, y2 = vertices[1]
-        x3, y3 = vertices[2]
-
-        # 计算斜率的倒数
-        try:
-            m12 = (x2 - x1) / (y2 - y1)
-        except ZeroDivisionError:
-            m12 = 99999999999999999
-        try:
-            m13 = (x3 - x1) / (y3 - y1)
-        except ZeroDivisionError:
-            m13 = 99999999999999999
-        try:
-            m23 = (x3 - x2) / (y3 - y2)
-        except ZeroDivisionError:
-            m23 = 99999999999999999
-
-        # 初始化结果集合
-        pixels = set()
-
-        # 扫描线算法
-        for y in range(y_min, y_max + 1):
-            # 判断是否在三角形内部的条件
-            if y1 <= y <= y2:
-                x_left = x1 + (y - y1) * m12
-            else:
-                x_left = x1 + (y - y1) * m13
-
-            if y2 <= y <= y3:
-                x_right = x2 + (y - y2) * m23
-            else:
-                x_right = x1 + (y - y1) * m13
-            try:
-                x_left = int(x_left)
-                x_right = int(x_right)
-            except ValueError:
-                continue
-
-            # 将当前扫描线上的像素坐标加入结果集合
-            for x in range(x_left, x_right + 1):
-                pixels.add((x, y))
-
-        self.pixels = pixels
+    # def find_pixels(self, texture_shape):
+    #     # 对三个点按照纵坐标从小到大排序
+    #     p1 = tuple(int(round(x * texture_shape[0])) for x in self.vertices[0].UVs[0])
+    #     p2 = tuple(int(round(x * texture_shape[0])) for x in self.vertices[1].UVs[0])
+    #     p3 = tuple(int(round(x * texture_shape[0])) for x in self.vertices[2].UVs[0])
+    #
+    #     vertices = sorted([p1, p2, p3], key=lambda p: p[1])
+    #
+    #     # 提取三个点的坐标和纵坐标范围
+    #     y_min = vertices[0][1]
+    #     y_max = vertices[2][1]
+    #
+    #     x1, y1 = vertices[0]
+    #     x2, y2 = vertices[1]
+    #     x3, y3 = vertices[2]
+    #
+    #     # 计算斜率的倒数
+    #     try:
+    #         m12 = (x2 - x1) / (y2 - y1)
+    #     except ZeroDivisionError:
+    #         m12 = 99999999999999999
+    #     try:
+    #         m13 = (x3 - x1) / (y3 - y1)
+    #     except ZeroDivisionError:
+    #         m13 = 99999999999999999
+    #     try:
+    #         m23 = (x3 - x2) / (y3 - y2)
+    #     except ZeroDivisionError:
+    #         m23 = 99999999999999999
+    #
+    #     # 初始化结果集合
+    #     pixels = set()
+    #
+    #     # 扫描线算法
+    #     for y in range(y_min, y_max + 1):
+    #         # 判断是否在三角形内部的条件
+    #         if y1 <= y <= y2:
+    #             x_left = x1 + (y - y1) * m12
+    #         else:
+    #             x_left = x1 + (y - y1) * m13
+    #
+    #         if y2 <= y <= y3:
+    #             x_right = x2 + (y - y2) * m23
+    #         else:
+    #             x_right = x1 + (y - y1) * m13
+    #         try:
+    #             x_left = int(x_left)
+    #             x_right = int(x_right)
+    #         except ValueError:
+    #             continue
+    #
+    #         # 将当前扫描线上的像素坐标加入结果集合
+    #         for x in range(x_left, x_right + 1):
+    #             pixels.add((x, y))
+    #
+    #     self.pixels = pixels
 
     @staticmethod
     def _cross_product(v1, v2):
@@ -272,9 +276,12 @@ class WFace:
         return mask
 
     def find_pixels_crossproduct(self):
-        p1 = (round(self.vertices[0].UVs[0][0] * 4096), round(self.vertices[0].UVs[0][1] * 4096))
-        p2 = (round(self.vertices[1].UVs[0][0] * 4096), round(self.vertices[1].UVs[0][1] * 4096))
-        p3 = (round(self.vertices[2].UVs[0][0] * 4096), round(self.vertices[2].UVs[0][1] * 4096))
+        i = self.valid_UV_index['vertex_{}'.format(self.vertices[0].ver_index)]
+        j = self.valid_UV_index['vertex_{}'.format(self.vertices[1].ver_index)]
+        k = self.valid_UV_index['vertex_{}'.format(self.vertices[2].ver_index)]
+        p1 = (round(self.vertices[0].UVs[i][0] * 4096), round(self.vertices[0].UVs[i][1] * 4096))
+        p2 = (round(self.vertices[1].UVs[j][0] * 4096), round(self.vertices[1].UVs[j][1] * 4096))
+        p3 = (round(self.vertices[2].UVs[k][0] * 4096), round(self.vertices[2].UVs[k][1] * 4096))
         min_x = min(p1[0], p2[0], p3[0])
         max_x = max(p1[0], p2[0], p3[0])
         min_y = min(p1[1], p2[1], p3[1])
@@ -292,9 +299,12 @@ class WFace:
         self.pixels = triangle_pixels
 
     def find_pixels_crossproduct_vec(self, pixelized_img):
-        p1 = (round(self.vertices[0].UVs[0][0] * 4096), 4096 - round(self.vertices[0].UVs[0][1] * 4096))
-        p2 = (round(self.vertices[1].UVs[0][0] * 4096), 4096 - round(self.vertices[1].UVs[0][1] * 4096))
-        p3 = (round(self.vertices[2].UVs[0][0] * 4096), 4096 - round(self.vertices[2].UVs[0][1] * 4096))
+        i = self.valid_UV_index['vertex_{}'.format(self.vertices[0].ver_index)]
+        j = self.valid_UV_index['vertex_{}'.format(self.vertices[1].ver_index)]
+        k = self.valid_UV_index['vertex_{}'.format(self.vertices[2].ver_index)]
+        p1 = (round(self.vertices[0].UVs[i][0] * 4096), 4096 - round(self.vertices[0].UVs[i][1] * 4096))
+        p2 = (round(self.vertices[1].UVs[j][0] * 4096), 4096 - round(self.vertices[1].UVs[j][1] * 4096))
+        p3 = (round(self.vertices[2].UVs[k][0] * 4096), 4096 - round(self.vertices[2].UVs[k][1] * 4096))
 
         min_x = np.min([p1[0], p2[0], p3[0]])
         max_x = np.max([p1[0], p2[0], p3[0]])
@@ -318,27 +328,27 @@ class WFace:
 
         self.pixels = triangle_pixels
 
-    def determine_mapping_matrix_3d_to_2d(self):
-        # 三维空间中三个点的坐标
-        A = np.array(self.vertices[0].coor)
-        B = np.array(self.vertices[1].coor)
-        C = np.array(self.vertices[2].coor)
-
-        # 构造系数矩阵
-        coeff_matrix = np.vstack((A, B))
-        coeff_matrix = np.vstack((coeff_matrix, C))
-
-        # 二维平面上的映射点坐标
-        P = self.vertices[0].UVs[0]
-        Q = self.vertices[1].UVs[0]
-        W = self.vertices[2].UVs[0]
-
-        # 构造常数矩阵
-        const_matrix = np.vstack((P, Q))
-        const_matrix = np.vstack((const_matrix, W))
-
-        # 求解矩阵
-        self.mapping_matrix = np.linalg.solve(coeff_matrix, const_matrix)
+    # def determine_mapping_matrix_3d_to_2d(self):
+    #     # 三维空间中三个点的坐标
+    #     A = np.array(self.vertices[0].coor)
+    #     B = np.array(self.vertices[1].coor)
+    #     C = np.array(self.vertices[2].coor)
+    #
+    #     # 构造系数矩阵
+    #     coeff_matrix = np.vstack((A, B))
+    #     coeff_matrix = np.vstack((coeff_matrix, C))
+    #
+    #     # 二维平面上的映射点坐标
+    #     P = self.vertices[0].UVs[0]
+    #     Q = self.vertices[1].UVs[0]
+    #     W = self.vertices[2].UVs[0]
+    #
+    #     # 构造常数矩阵
+    #     const_matrix = np.vstack((P, Q))
+    #     const_matrix = np.vstack((const_matrix, W))
+    #
+    #     # 求解矩阵
+    #     self.mapping_matrix = np.linalg.solve(coeff_matrix, const_matrix)
 
     def determine_mapping_matrix_2d_to_3d(self):
         # 三维空间中三个点的坐标
@@ -351,9 +361,9 @@ class WFace:
         const_matrix = np.vstack((const_matrix, C))
 
         # 二维平面上的映射点坐标
-        P = list(self.vertices[0].UVs[self.valid_UV_index['vertex_0']])
-        Q = list(self.vertices[1].UVs[self.valid_UV_index['vertex_1']])
-        W = list(self.vertices[2].UVs[self.valid_UV_index['vertex_2']])
+        P = list(self.vertices[0].UVs[self.valid_UV_index['vertex_{}'.format(self.vertices[0].ver_index)]])
+        Q = list(self.vertices[1].UVs[self.valid_UV_index['vertex_{}'.format(self.vertices[1].ver_index)]])
+        W = list(self.vertices[2].UVs[self.valid_UV_index['vertex_{}'.format(self.vertices[2].ver_index)]])
         P += [1]
         Q += [1]
         W += [1]
@@ -367,9 +377,9 @@ class WFace:
 
     def determine_valid_UV_index(self):
         """ determine the distances between 3 vertices """
-        for i in range(4):
-            for j in range(4):
-                for k in range(4):
+        for i in range(len(self.vertices[0].UVs)):
+            for j in range(len(self.vertices[1].UVs)):
+                for k in range(len(self.vertices[2].UVs)):
                     try:
                         ver1 = (self.vertices[0].UVs[i][0] * 4096, self.vertices[0].UVs[i][1] * 4096)
                     except IndexError:
@@ -389,9 +399,9 @@ class WFace:
 
                     if dis1 < 100 and dis2 < 100 and dis3 < 100:
                         self.valid_UV_index = {
-                            'vertex_0': i,
-                            'vertex_1': j,
-                            'vertex_2': k,
+                            'vertex_{}'.format(self.vertices[0].ver_index): i,
+                            'vertex_{}'.format(self.vertices[1].ver_index): j,
+                            'vertex_{}'.format(self.vertices[2].ver_index): k,
                         }
                         return
 
@@ -483,7 +493,7 @@ class WavefrontObj:
                             else:
                                 edge = self.edges_dict[WEdge.existent['{},{}'.format(ver_index_i, ver_index_j)]]
                             edge.faces.append(face)
-                            edge.find_mid_point_and_angle()
+                            edge.find_mid_point_and_angle(face)
                             face.edges.append(edge)
 
                     texture_shape = self.texture.img.shape
@@ -555,6 +565,7 @@ def dfs_iteration(face: WFace):
         stack_len = max(stack_len, len(stack))
     return stack_len
 
+
 def check_if_all_faces_drawn(obj: WavefrontObj):
     # status = []
     # for face in obj.faces_dict.values():
@@ -567,11 +578,11 @@ def check_if_all_faces_drawn(obj: WavefrontObj):
     status = np.array([face.already_drawn for face in obj.faces_dict.values()], dtype=bool)
     return status
 
+
 if __name__ == '__main__':
     obj = WavefrontObj(wavefront_filepath, texture_filepath)
     stack_len = dfs_iteration(obj.faces_dict[1])
     status = check_if_all_faces_drawn(obj)
-
 
     newUV = NewUVUnwrap(obj)
     attach_point = np.array((2048, 2048))
