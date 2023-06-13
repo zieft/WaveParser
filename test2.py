@@ -3,7 +3,8 @@ texture_filepath = r'C:\Users\zieft\Desktop\testdataset\smallTexture\texture_100
 import numpy as np
 import cv2
 import math
-
+import sys
+sys.setrecursionlimit(5000)
 
 class TPixel:
     def __init__(self, intensity, uv):
@@ -132,7 +133,7 @@ class WFace:
         self.pixels = None
         self.mapping_matrix = None
         self.edges = []
-        self.aready_drawn = False
+        self.already_drawn = False
         self.valid_UV_index = None
         # self.texture_uv = [(), ()]  不需要额外记录uv，因为vertex自带uv
 
@@ -388,7 +389,6 @@ class WFace:
                     dis2 = math.sqrt((ver3[0] - ver1[0]) ** 2 + (ver3[1] - ver1[1]) ** 2)
                     dis3 = math.sqrt((ver2[0] - ver3[0]) ** 2 + (ver2[1] - ver3[1]) ** 2)
 
-
                     if dis1 < 100 and dis2 < 100 and dis3 < 100:
                         self.valid_UV_index = {
                             'vertex_0': i,
@@ -517,8 +517,29 @@ def get_edge(ver1, ver2):
     print(edge, edge.mid_point_UV)
 
 
+def dfs(face: WFace):
+    edge_1 = face.edges[0]
+    edge_2 = face.edges[1]
+    edge_3 = face.edges[2]
+
+    if not face.already_drawn:
+        # todo: draw face
+        face.already_drawn = True
+    else:
+        return
+
+    for edge in face.edges:
+        if len(edge.faces) == 2:
+            dfs(edge.faces[0])
+            dfs(edge.faces[1])
+        else:
+            continue
+
+
 if __name__ == '__main__':
     obj = WavefrontObj(wavefront_filepath, texture_filepath)
+    dfs(obj.faces_dict[1])
+
     newUV = NewUVUnwrap(obj)
     attach_point = np.array((2048, 2048))
     attach_angle = 0
@@ -527,15 +548,9 @@ if __name__ == '__main__':
         rotation_matrix = np.eye(3)
         if len(edge.faces) > 1:
             for face in edge.faces:
-                if not face.aready_drawn:
+                if not face.already_drawn:
                     for pixel in face.pixels:
                         rotated_UV = rotation_matrix.dot(np.array(pixel.UV))
                         translated_UV = rotated_UV + translation_vector
                         newUV.img[translated_UV] = pixel
-                    face.aready_drawn = True
-
-obj.faces_dict[3233].vertices
-
-obj.faces_dict[3313].vertices
-
-obj.faces_dict[3313].edges
+                    face.already_drawn = True
