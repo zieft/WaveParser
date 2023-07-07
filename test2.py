@@ -46,16 +46,6 @@ class TextrueObj:
                 img[i][j] = pix
         return img
 
-    # def init_pixels(self):
-    #     img = np.zeros((4096, 4096), dtype='O')
-    #     u = np.arange(img.shape[1]) / img.shape[0]
-    #     v = np.arange(img.shape[0]) / img.shape[1]
-    #     u, v = np.meshgrid(u, v)
-    #     pix = TPixel(intensity=self.img, uv=(u, v))
-    #     pix.uv_pixel_index = np.indices(img.shape).swapaxes(0, 2).swapaxes(0, 1)
-    #     img[:, :] = pix
-    #     return img
-
 
 class WVertex:
     def __init__(self, coor):
@@ -171,62 +161,6 @@ class WFace:
 
         self.area = 0.5 * abs((x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2)))
 
-    # def find_pixels(self, texture_shape):
-    #     # 对三个点按照纵坐标从小到大排序
-    #     p1 = tuple(int(round(x * texture_shape[0])) for x in self.vertices[0].UVs[0])
-    #     p2 = tuple(int(round(x * texture_shape[0])) for x in self.vertices[1].UVs[0])
-    #     p3 = tuple(int(round(x * texture_shape[0])) for x in self.vertices[2].UVs[0])
-    #
-    #     vertices = sorted([p1, p2, p3], key=lambda p: p[1])
-    #
-    #     # 提取三个点的坐标和纵坐标范围
-    #     y_min = vertices[0][1]
-    #     y_max = vertices[2][1]
-    #
-    #     x1, y1 = vertices[0]
-    #     x2, y2 = vertices[1]
-    #     x3, y3 = vertices[2]
-    #
-    #     # 计算斜率的倒数
-    #     try:
-    #         m12 = (x2 - x1) / (y2 - y1)
-    #     except ZeroDivisionError:
-    #         m12 = 99999999999999999
-    #     try:
-    #         m13 = (x3 - x1) / (y3 - y1)
-    #     except ZeroDivisionError:
-    #         m13 = 99999999999999999
-    #     try:
-    #         m23 = (x3 - x2) / (y3 - y2)
-    #     except ZeroDivisionError:
-    #         m23 = 99999999999999999
-    #
-    #     # 初始化结果集合
-    #     pixels = set()
-    #
-    #     # 扫描线算法
-    #     for y in range(y_min, y_max + 1):
-    #         # 判断是否在三角形内部的条件
-    #         if y1 <= y <= y2:
-    #             x_left = x1 + (y - y1) * m12
-    #         else:
-    #             x_left = x1 + (y - y1) * m13
-    #
-    #         if y2 <= y <= y3:
-    #             x_right = x2 + (y - y2) * m23
-    #         else:
-    #             x_right = x1 + (y - y1) * m13
-    #         try:
-    #             x_left = int(x_left)
-    #             x_right = int(x_right)
-    #         except ValueError:
-    #             continue
-    #
-    #         # 将当前扫描线上的像素坐标加入结果集合
-    #         for x in range(x_left, x_right + 1):
-    #             pixels.add((x, y))
-    #
-    #     self.pixels = pixels
 
     @staticmethod
     def _cross_product(v1, v2):
@@ -337,27 +271,6 @@ class WFace:
 
         self.pixels = triangle_pixels
 
-    # def determine_mapping_matrix_3d_to_2d(self):
-    #     # 三维空间中三个点的坐标
-    #     A = np.array(self.vertices[0].coor)
-    #     B = np.array(self.vertices[1].coor)
-    #     C = np.array(self.vertices[2].coor)
-    #
-    #     # 构造系数矩阵
-    #     coeff_matrix = np.vstack((A, B))
-    #     coeff_matrix = np.vstack((coeff_matrix, C))
-    #
-    #     # 二维平面上的映射点坐标
-    #     P = self.vertices[0].UVs[0]
-    #     Q = self.vertices[1].UVs[0]
-    #     W = self.vertices[2].UVs[0]
-    #
-    #     # 构造常数矩阵
-    #     const_matrix = np.vstack((P, Q))
-    #     const_matrix = np.vstack((const_matrix, W))
-    #
-    #     # 求解矩阵
-    #     self.mapping_matrix = np.linalg.solve(coeff_matrix, const_matrix)
 
     def determine_mapping_matrix_2d_to_3d(self):
         # 三维空间中三个点的坐标
@@ -589,7 +502,6 @@ def cal_trans_matrix(Ax1, Ay1, Ax2, Ay2, Bx1, By1, Bx2, By2):
     R = np.array([[np.cos(theta), -np.sin(theta)],
                   [np.sin(theta), np.cos(theta)]])
 
-    # scaled_R = np.dot(R, S)
     # 计算边A到边B的平移矩阵
     T = np.array([[Bxm - Axm],
                   [Bym - Aym]])
@@ -603,15 +515,10 @@ def cal_trans_matrix(Ax1, Ay1, Ax2, Ay2, Bx1, By1, Bx2, By2):
 
 def draw_face(new_face: WFace, UV_obj, init_M=None, ref_edge: WEdge = None, ref_face: WFace = None, ):
     """"""
+    if not ref_face:
+        ref_face = new_face
+
     if not init_M:
-        # 计算边A和边B的长度
-        # ref_edge_length = ref_edge.length_uv[ref_face.findex]
-        # new_edge_length = ref_edge.length_uv[new_face.findex]
-        # 计算边A和边B的中点坐标
-        # ref_edge_mid = ref_edge.mid_point_UV["face_{}".format(ref_face.findex)]
-        # new_edge_mid = ref_edge.mid_point_UV["face_{}".format(new_face.findex)]
-        if not ref_face:
-            ref_face = new_face
         # 计算边A和边B的向量表示
         vertex0 = ref_edge.vertices[0]
         vertex1 = ref_edge.vertices[1]
@@ -629,9 +536,6 @@ def draw_face(new_face: WFace, UV_obj, init_M=None, ref_edge: WEdge = None, ref_
     else:
         M = init_M[0]
         S = np.eye(3)
-
-    if not ref_face:
-        ref_face = new_face
 
     ref_point_u = ref_edge.mid_point_UV['face_{}'.format(ref_face.findex)][0]
     ref_point_v = ref_edge.mid_point_UV['face_{}'.format(ref_face.findex)][1]
@@ -684,32 +588,17 @@ def dfs_iteration(new_face: WFace, ref_edge: WEdge, newUV, init_M):
 
 
 def check_if_all_faces_drawn(obj: WavefrontObj):
-    # status = []
-    # for new_face in obj.faces_dict.values():
-    #     if new_face.already_drawn:
-    #         status.append(True)
-    #     else:
-    #         status.append(False)
-    # return status
-
     status = np.array([face.already_drawn for face in obj.faces_dict.values()], dtype=bool)
     return status
 
 
 if __name__ == '__main__':
     obj = WavefrontObj(wavefront_filepath, texture_filepath)
-    # stack_len = dfs_iteration(obj.faces_dict[1])
-    # status = check_if_all_faces_drawn(obj)
-    # number_of_not_drawn_face = np.count_nonzero(status == False)
 
     # Face drawn initialization
     new_face = obj.faces_dict[1]
     new_edge = new_face.edges[0]
     new_edge_mid = new_edge.mid_point_UV['face_1']
-    # U, V = new_edge.mid_point_UV["face_1"]
-    # T = np.array([[2048 - U],
-    #               [2048 - V]])
-    # M = np.concatenate((np.concatenate((np.eye(2), T), axis=1), np.array([[0, 0, 1]])), axis=0)
 
     ref_edge = WEdge()
     ref_edge.mid_point_UV = {"face_1": (0.1, 0.1)}
@@ -734,22 +623,3 @@ if __name__ == '__main__':
     plt.imshow(newUV.img)
     plt.savefig('test.jpg')
 
-#     attach_point = np.array((2048, 2048))
-#     attach_angle = 0
-#     for edge in newUV.wavefront_obj.edges_dict.values():
-#         translation_vector = np.array(edge.mid_point_UV) - attach_point
-#         rotation_matrix = np.eye(3)
-#         if len(edge.faces) > 1:
-#             for face in edge.faces:
-#                 if not face.already_drawn:
-#                     for pixel in face.pixels:
-#                         rotated_UV = rotation_matrix.dot(np.array(pixel.UV))
-#                         translated_UV = rotated_UV + translation_vector
-#                         newUV.img[translated_UV] = pixel
-#                     face.already_drawn = True
-#
-# A = np.array([[1, 2], [3, 4]])
-# B = np.array([[5], [6]])
-# C = np.array([[0, 0, 1]])
-# D = np.concatenate((A, B), axis=1)
-# E = np.concatenate((D, C), axis=0)
