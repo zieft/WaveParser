@@ -374,6 +374,13 @@ class WFace:
 
 
 class WavefrontObj:
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not isinstance(cls._instance, cls):
+            cls._instance = super().__new__(cls, *args, **kwargs)
+        return cls._instance
+
     __slots__ = [
         'texture',          # TextureObj instance
         'filepath',         # filepath to the texture image
