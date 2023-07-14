@@ -8,12 +8,22 @@ import matplotlib.pyplot as plt
 
 
 class TPixel:
+    __slots__ = [
+        'intensity',  # The intensity of the pixel
+        'UV',  # the UV coordinates of the pixel
+        'coor',  # the corresponding spatial coordinates of the pixel in the 3D model
+        'face',  # the face to which the pixel belongs
+        'uv_pixel_index'  # the index of the pixel in the texture image
+    ]
+
     def __init__(self, intensity, uv):
         self.intensity = intensity
         self.UV = uv
 
         self.coor = None
         self.face = None
+
+        self.uv_pixel_index = None
 
     def __repr__(self):
         return str(self.intensity)
@@ -22,11 +32,17 @@ class TPixel:
         return str(self.intensity)
 
 
-class TextrueObj:
+class TextureObj:
+    __slots__ = [
+        'filepath',  # path of the texture file
+        'img',  # texture stored as ndarray
+        'pixelated_img'  # pixelated image
+    ]
+
     def __init__(self, filepath):
         self.filepath = filepath
         self.img = self.img_read()
-        self.pixelized_img = self.init_pixels()
+        self.pixelated_img = self.init_pixels()
 
     def img_read(self):
         img = cv2.imread(self.filepath, cv2.IMREAD_GRAYSCALE)
@@ -48,6 +64,15 @@ class TextrueObj:
 
 
 class WVertex:
+    __slots__ = [
+        'coor',  # coordinates in 3d model
+        'ver_index',  # index of vertex, the line number of a line starting with "v"
+        'uv_index',  # index of vertex in Blender
+        'UVs',  # a list of UV coordinate(s)
+        'neighbors',  # list of neighbor Vertices
+        'faces'  # list of faces, in which the vertex belongs to
+    ]
+
     def __init__(self, coor):
         self.coor = coor  # tuple
         self.ver_index = 0
@@ -81,6 +106,15 @@ class WVertex:
 
 class WEdge:
     existent = {}
+    __slots__ = [
+        'eindex',       # index of the edge
+        'vertices',     # WVert instance
+        'mid_point_UV', # UV coordinate of the middle point of the edge
+        'angle',        # The angle swept by the edge from the horizontal line, counterclockwise.
+        'faces',        # WFace instance
+        'length_uv',    # the length of the edge in UV space
+        'length_3d'     # the length of the edge in 3D space
+    ]
 
     def __init__(self):
         self.eindex = None
@@ -121,6 +155,17 @@ class WEdge:
 
 
 class WFace:
+    __slots__ = [
+        'findex',  # index of this face
+        'vertices',  # WVert instances
+        'area',  # area of this face
+        'pixels',  # TPixel instances
+        'mapping_matrix',  # UV to 3D
+        'edges',  # WEdge instances
+        'already_drawn',  # Flag
+        'valid_UV_index'  # valid uv index of vertices
+    ]
+
     def __init__(self):
         """
         vertices: list of 3 WVertex objects.
@@ -160,7 +205,6 @@ class WFace:
         x3, y3 = vertices[2]
 
         self.area = 0.5 * abs((x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2)))
-
 
     @staticmethod
     def _cross_product(v1, v2):
@@ -271,7 +315,6 @@ class WFace:
 
         self.pixels = triangle_pixels
 
-
     def determine_mapping_matrix_2d_to_3d(self):
         # 三维空间中三个点的坐标
         A = np.array(self.vertices[0].coor)
@@ -331,8 +374,17 @@ class WFace:
 
 
 class WavefrontObj:
+    __slots__ = [
+        'texture',          # TextureObj instance
+        'filepath',         # filepath to the texture image
+        'vertices_dict',    # dict format of all vertices
+        'UVs_dict',         # dict format of all UV coordinates
+        'edges_dict',       # dict format of all edges
+        'faces_dict'        # dict format of all faces
+    ]
+
     def __init__(self, wavefront_path, texture_path):
-        self.texture = TextrueObj(texture_path)
+        self.texture = TextureObj(texture_path)
         self.filepath = wavefront_path
         self.vertices_dict = self.parse_vertices_dict()
         self.UVs_dict = self.parse_uvs_dict()
@@ -422,7 +474,7 @@ class WavefrontObj:
                     texture_shape = self.texture.img.shape
                     face.determine_mapping_matrix_2d_to_3d()
                     face.cal_area(texture_shape)
-                    face.find_pixels_crossproduct_vec(self.texture.pixelized_img)
+                    face.find_pixels_crossproduct_vec(self.texture.pixelated_img)
                     faces_dict[face_index] = face
                     face_index += 1
 
@@ -622,4 +674,3 @@ if __name__ == '__main__':
     plt.figure(dpi=1200)
     plt.imshow(newUV.img)
     plt.savefig('test.jpg')
-
