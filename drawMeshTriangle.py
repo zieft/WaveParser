@@ -30,7 +30,7 @@ def parse_wavefront_obj(file_path):
 
 
 
-vertices, tex_coords, faces = parse_wavefront_obj(r'C:\Users\zieft\Desktop\smallTexture\texturedMesh.obj')
+vertices, tex_coords, faces = parse_wavefront_obj(r'C:\Users\zieft\Desktop\testdataset\ggr_yz_console_small_remeshed\texturedMesh.obj')
 
 
 def replace_indices_with_coordinates(faces, vertices, tex_coords):
@@ -91,7 +91,7 @@ P1 = faces['Vertex1'].str.split('/').str[1].astype(int)
 P2 = faces['Vertex2'].str.split('/').str[1].astype(int)
 P3 = faces['Vertex3'].str.split('/').str[1].astype(int)
 
-im = cv2.imread(r'C:\Users\zieft\Desktop\smallTexture\texture_1001.png')
+im = cv2.imread(r'C:\Users\zieft\Desktop\testdataset\ggr_yz_console_small_remeshed\texture_1001.png')
 
 
 def draw_triangle(im, p1, p2, p3):
@@ -119,4 +119,4 @@ for i, j, k in zip(P1, P2, P3):
 
 plt.imshow(im)
 plt.show()
-cv2.imwrite("path/to/image.png", im)
+cv2.imwrite(r"C:\Users\zieft\Desktop\testdataset\ggr_yz_console_small_remeshed\mesh.png", im)

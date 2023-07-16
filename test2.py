@@ -1,10 +1,11 @@
-wavefront_filepath = './testdataset/smallTexture/texturedMesh.obj'
-texture_filepath = './testdataset/smallTexture/texture_1001.png'
+wavefront_filepath = './testdataset/console_good/Texturing/LSCM/texturedMesh.obj'
+texture_filepath = './testdataset/console_good/Texturing/LSCM/texture_1001.png'
 import math
 import cv2
 import numpy as np
 import copy
 import matplotlib.pyplot as plt
+from collections import deque
 
 
 class TPixel:
@@ -107,13 +108,13 @@ class WVertex:
 class WEdge:
     existent = {}
     __slots__ = [
-        'eindex',       # index of the edge
-        'vertices',     # WVert instance
-        'mid_point_UV', # UV coordinate of the middle point of the edge
-        'angle',        # The angle swept by the edge from the horizontal line, counterclockwise.
-        'faces',        # WFace instance
-        'length_uv',    # the length of the edge in UV space
-        'length_3d'     # the length of the edge in 3D space
+        'eindex',  # index of the edge
+        'vertices',  # WVert instance
+        'mid_point_UV',  # UV coordinate of the middle point of the edge
+        'angle',  # The angle swept by the edge from the horizontal line, counterclockwise.
+        'faces',  # WFace instance
+        'length_uv',  # the length of the edge in UV space
+        'length_3d'  # the length of the edge in 3D space
     ]
 
     def __init__(self):
@@ -155,6 +156,7 @@ class WEdge:
 
 
 class WFace:
+    existent = {}
     __slots__ = [
         'findex',  # index of this face
         'vertices',  # WVert instances
@@ -307,7 +309,10 @@ class WFace:
         triangle_pixel_UV = np.column_stack((X[mask], Y[mask]))
         triangle_pixels = []
         for i in triangle_pixel_UV:
-            pixel_instance = pixelized_img[i[0], i[1]]
+            try:
+                pixel_instance = pixelized_img[i[0], i[1]]
+            except IndexError:
+                continue
             uv = list(pixel_instance.UV) + [1]
             pixel_instance.coor = np.dot(self.mapping_matrix, np.array(uv))
             pixel_instance.face = self
@@ -378,16 +383,16 @@ class WavefrontObj:
 
     def __new__(cls, *args, **kwargs):
         if not isinstance(cls._instance, cls):
-            cls._instance = super().__new__(cls, *args, **kwargs)
+            cls._instance = super().__new__(cls)
         return cls._instance
 
     __slots__ = [
-        'texture',          # TextureObj instance
-        'filepath',         # filepath to the texture image
-        'vertices_dict',    # dict format of all vertices
-        'UVs_dict',         # dict format of all UV coordinates
-        'edges_dict',       # dict format of all edges
-        'faces_dict'        # dict format of all faces
+        'texture',  # TextureObj instance
+        'filepath',  # filepath to the texture image
+        'vertices_dict',  # dict format of all vertices
+        'UVs_dict',  # dict format of all UV coordinates
+        'edges_dict',  # dict format of all edges
+        'faces_dict'  # dict format of all faces
     ]
 
     def __init__(self, wavefront_path, texture_path):
@@ -443,40 +448,43 @@ class WavefrontObj:
                     vertex_indices = [int(x.split('/')[0]) for x in elements[1:]]
                     uv_indices = [int(x.split('/')[1]) for x in elements[1:]]
                     wvertices = []
-                    for i in range(3):  # a new_face is always a triangle, therefore iterate 3 times.
-                        ver = self.vertices_dict[vertex_indices[i]]
-                        ver.ver_index_setter(vertex_indices[i])
-                        ver.uv_index_setter(uv_indices[i])
-                        ver.UVs_setter(self.UVs_dict[uv_indices[i]])
-                        neighbors = [x for x in vertex_indices if x != vertex_indices[i]]
-                        ver.neighbor_setter(neighbors)
-                        wvertices.append(ver)
-                        if face_index not in ver.faces:
-                            ver.faces_setter(face_index)
-                    face = WFace()
-                    face.findex = face_index
-                    face.vertices = wvertices
-                    face.determine_valid_UV_index()
+                    if '{},{},{}'.format(vertex_indices[0], vertex_indices[1], vertex_indices[2]) not in WFace.existent:
+                        for i in range(3):  # a new_face is always a triangle, therefore iterate 3 times.
+                            ver = self.vertices_dict[vertex_indices[i]]
+                            ver.ver_index_setter(vertex_indices[i])
+                            ver.uv_index_setter(uv_indices[i])
+                            ver.UVs_setter(self.UVs_dict[uv_indices[i]])
+                            neighbors = [x for x in vertex_indices if x != vertex_indices[i]]
+                            ver.neighbor_setter(neighbors)
+                            wvertices.append(ver)
+                            if face_index not in ver.faces:
+                                ver.faces_setter(face_index)
+                        face = WFace()
+                        face.findex = face_index
+                        WFace.existent[
+                            '{},{},{}'.format(vertex_indices[0], vertex_indices[1], vertex_indices[2])] = face.findex
+                        face.vertices = wvertices
+                        face.determine_valid_UV_index()
 
-                    for i in range(len(face.vertices)):
-                        for j in range(i + 1, len(face.vertices)):
-                            ver_index_i = face.vertices[i].ver_index
-                            ver_index_j = face.vertices[j].ver_index
-                            if '{},{}'.format(ver_index_i, ver_index_j) not in WEdge.existent:
-                                edge = WEdge()
-                                edge.eindex = edge_index
-                                WEdge.existent['{},{}'.format(ver_index_i, ver_index_j)] = edge.eindex
-                                WEdge.existent['{},{}'.format(ver_index_j, ver_index_i)] = edge.eindex
-                                self.edges_dict[edge.eindex] = edge
-                                edge.vertices.append(self.vertices_dict.get(ver_index_i))
-                                edge.vertices.append(self.vertices_dict.get(ver_index_j))
-                                edge_index += 1
-                            else:
-                                edge = self.edges_dict[WEdge.existent['{},{}'.format(ver_index_i, ver_index_j)]]
-                            edge.faces.append(face)
-                            edge.find_mid_point_and_angle(face)
-                            edge.cal_length(face)
-                            face.edges.append(edge)
+                        for i in range(len(face.vertices)):
+                            for j in range(i + 1, len(face.vertices)):
+                                ver_index_i = face.vertices[i].ver_index
+                                ver_index_j = face.vertices[j].ver_index
+                                if '{},{}'.format(ver_index_i, ver_index_j) not in WEdge.existent:
+                                    edge = WEdge()
+                                    edge.eindex = edge_index
+                                    WEdge.existent['{},{}'.format(ver_index_i, ver_index_j)] = edge.eindex
+                                    WEdge.existent['{},{}'.format(ver_index_j, ver_index_i)] = edge.eindex
+                                    self.edges_dict[edge.eindex] = edge
+                                    edge.vertices.append(self.vertices_dict.get(ver_index_i))
+                                    edge.vertices.append(self.vertices_dict.get(ver_index_j))
+                                    edge_index += 1
+                                else:
+                                    edge = self.edges_dict[WEdge.existent['{},{}'.format(ver_index_i, ver_index_j)]]
+                                edge.faces.append(face)
+                                edge.find_mid_point_and_angle(face)
+                                edge.cal_length(face)
+                                face.edges.append(edge)
 
                     texture_shape = self.texture.img.shape
                     face.determine_mapping_matrix_2d_to_3d()
@@ -495,174 +503,190 @@ class NewUVUnwrap:
         self.img = np.zeros((4096 + 2000, 4096 + 2000))
 
 
-def get_vertices(index):
-    ver = obj.vertices_dict[index]
+class StaticHandler:
+    counter = 0
 
-    print(ver.UVs[0][0] * 4096, 4096 - ver.UVs[0][1] * 4096)
+    @staticmethod
+    def get_vertices(index):
+        ver = obj.vertices_dict[index]
+
+        print(ver.UVs[0][0] * 4096, 4096 - ver.UVs[0][1] * 4096)
+
+    @staticmethod
+    def get_edge(ver1, ver2):
+        index = WEdge.existent["{},{}".format(ver1, ver2)]
+        edge = obj.edges_dict[index]
+        print(edge, edge.mid_point_UV)
+
+    @staticmethod
+    def dfs_recursive(face: WFace):
+        """ causing stack overflow """
+        edge_1 = face.edges[0]
+        edge_2 = face.edges[1]
+        edge_3 = face.edges[2]
+
+        if face.already_drawn:
+            return
 
 
-def get_edge(ver1, ver2):
-    index = WEdge.existent["{},{}".format(ver1, ver2)]
-    edge = obj.edges_dict[index]
-    print(edge, edge.mid_point_UV)
+        face.already_drawn = True
 
-
-def dfs_recursive(face: WFace):
-    """ causing stack overflow """
-    edge_1 = face.edges[0]
-    edge_2 = face.edges[1]
-    edge_3 = face.edges[2]
-
-    if face.already_drawn:
+        for edge in face.edges:
+            if len(edge.faces) == 2:
+                adjacent_face_1 = edge.faces[0]
+                adjacent_face_2 = edge.faces[1]
+                if not adjacent_face_1.already_drawn and adjacent_face_1 != face:
+                    StaticHandler.dfs_recursive(adjacent_face_1)
+                if not adjacent_face_2.already_drawn and adjacent_face_2 != face:
+                    StaticHandler.dfs_recursive(adjacent_face_2)
+            else:
+                continue
         return
 
-    # todo: draw new_face
-    face.already_drawn = True
+    @staticmethod
+    def cal_trans_matrix(Ax1, Ay1, Ax2, Ay2, Bx1, By1, Bx2, By2):
+        # 计算边A和边B的长度
+        LA = np.sqrt((Ax2 - Ax1) ** 2 + (Ay2 - Ay1) ** 2)
+        LB = np.sqrt((Bx2 - Bx1) ** 2 + (By2 - By1) ** 2)
 
-    for edge in face.edges:
-        if len(edge.faces) == 2:
-            dfs_recursive(edge.faces[0])
-            dfs_recursive(edge.faces[1])
-        else:
-            continue
-    return
+        # 计算边A和边B的中点坐标
+        Axm, Aym = (Ax1 + Ax2) / 2, (Ay1 + Ay2) / 2
+        Bxm, Bym = (Bx1 + Bx2) / 2, (By1 + By2) / 2
 
-
-def cal_trans_matrix(Ax1, Ay1, Ax2, Ay2, Bx1, By1, Bx2, By2):
-    # 计算边A和边B的长度
-    LA = np.sqrt((Ax2 - Ax1) ** 2 + (Ay2 - Ay1) ** 2)
-    LB = np.sqrt((Bx2 - Bx1) ** 2 + (By2 - By1) ** 2)
-
-    # 计算边A和边B的中点坐标
-    Axm, Aym = (Ax1 + Ax2) / 2, (Ay1 + Ay2) / 2
-    Bxm, Bym = (Bx1 + Bx2) / 2, (By1 + By2) / 2
-
-    # 计算边A和边B的向量表示
-    VA = np.array([Ax2 - Ax1, Ay2 - Ay1])
-    VB = np.array([Bx2 - Bx1, By2 - By1])
-
-    # 计算边A到边B的缩放比例
-    scale = LB / LA
-    if scale > 2:  # todo: delete after debug
-        scale = 2
-    S = np.array([[1 - scale, 0, 0],
-                  [0, 1 - scale, 0],
-                  [0, 0, 1]])
-
-    # 计算边A和边B的旋转角度
-    tmp = np.dot(VA, VB) / (LA * LB)
-    if tmp > 1:
-        tmp = 1
-    elif tmp < -1:
-        tmp = -1
-    theta = np.arccos(tmp)
-
-    # 计算边A到边B的旋转矩阵
-    R = np.array([[np.cos(theta), -np.sin(theta)],
-                  [np.sin(theta), np.cos(theta)]])
-
-    # 计算边A到边B的平移矩阵
-    T = np.array([[Bxm - Axm],
-                  [Bym - Aym]])
-
-    # 计算边A到边B的变换矩阵
-    M = np.concatenate((np.concatenate((R, T), axis=1), np.array([[0, 0, 1]])), axis=0)
-    if np.isnan(M).any():
-        raise ("NaN detected")
-    return S, M
-
-
-def draw_face(new_face: WFace, UV_obj, init_M=None, ref_edge: WEdge = None, ref_face: WFace = None, ):
-    """"""
-    if not ref_face:
-        ref_face = new_face
-
-    if not init_M:
         # 计算边A和边B的向量表示
-        vertex0 = ref_edge.vertices[0]
-        vertex1 = ref_edge.vertices[1]
+        VA = np.array([Ax2 - Ax1, Ay2 - Ay1])
+        VB = np.array([Bx2 - Bx1, By2 - By1])
 
-        ref_ver0_u, ref_ver0_v = vertex0.UVs[ref_face.valid_UV_index["vertex_{}".format(vertex0.ver_index)]]
-        ref_ver1_u, ref_ver1_v = vertex1.UVs[ref_face.valid_UV_index["vertex_{}".format(vertex1.ver_index)]]
+        # 计算边A到边B的缩放比例
+        scale = LB / LA
+        # if scale > 2:  # todo: delete after debug
+        #     scale = 2
+        S = np.array([[1 - scale, 0, 0],
+                      [0, 1 - scale, 0],
+                      [0, 0, 1]])
 
-        new_ver0_u, new_ver0_v = vertex0.UVs[new_face.valid_UV_index["vertex_{}".format(vertex0.ver_index)]]
-        new_ver1_u, new_ver1_v = vertex1.UVs[new_face.valid_UV_index["vertex_{}".format(vertex1.ver_index)]]
+        # 计算边A和边B的旋转角度
+        tmp = np.dot(VA, VB) / (LA * LB)
+        if tmp > 1:
+            tmp = 1
+        elif tmp < -1:
+            tmp = -1
+        theta = np.arccos(tmp)
 
-        S, M = cal_trans_matrix(ref_ver0_u, ref_ver0_v,
-                                ref_ver1_u, ref_ver1_v,
-                                new_ver0_u, new_ver0_v,
-                                new_ver1_u, new_ver1_v)
-    else:
-        M = init_M[0]
-        S = np.eye(3)
+        # 计算边A到边B的旋转矩阵
+        R = np.array([[np.cos(theta), -np.sin(theta)],
+                      [np.sin(theta), np.cos(theta)]])
 
-    ref_point_u = ref_edge.mid_point_UV['face_{}'.format(ref_face.findex)][0]
-    ref_point_v = ref_edge.mid_point_UV['face_{}'.format(ref_face.findex)][1]
+        # 计算边A到边B的平移矩阵
+        T = np.array([[Bxm - Axm],
+                      [Bym - Aym]])
 
-    ref_point = np.array([ref_point_u, ref_point_v, 0])
+        # 计算边A到边B的变换矩阵
+        M = np.concatenate((np.concatenate((R, T), axis=1), np.array([[0, 0, 1]])), axis=0)
+        if np.isnan(M).any():
+            raise ("NaN detected")
+        return S, M
 
-    for pixel in new_face.pixels:
-        new_pixel = copy.copy(pixel)
-        UV_list = list(new_pixel.UV)
-        UV_list.append(0)
-        UV_np = np.array(UV_list)
-        new_UV_np = S.dot(ref_point) + (1 - S[0][0]) * UV_np
-        new_UV_np = M.dot(new_UV_np)
-        new_UV_list = new_UV_np.tolist()
-        new_UV_list.pop()
-        new_pixel.UV = tuple(new_UV_list)
-        new_u_pixel_index = round(new_UV_list[0] * 4096)
-        new_v_pixel_index = round(new_UV_list[1] * 4096)
-        intensity = new_pixel.intensity
-        UV_obj.img[new_u_pixel_index][new_v_pixel_index] = intensity
+    @staticmethod
+    def draw_face(new_face: WFace, UV_obj, init_M=None, ref_edge: WEdge = None, ref_face: WFace = None, ):
+        """"""
+        if not ref_face:
+            ref_face = new_face
 
-    # 更新ref_edge, ref_face
+        if not init_M:
+            # 计算边A和边B的向量表示
+            vertex0 = ref_edge.vertices[0]
+            vertex1 = ref_edge.vertices[1]
 
+            ref_ver0_u, ref_ver0_v = vertex0.UVs[ref_face.valid_UV_index["vertex_{}".format(vertex0.ver_index)]]
+            ref_ver1_u, ref_ver1_v = vertex1.UVs[ref_face.valid_UV_index["vertex_{}".format(vertex1.ver_index)]]
 
-def dfs_iteration(new_face: WFace, ref_edge: WEdge, newUV, init_M):
-    """
+            new_ver0_u, new_ver0_v = vertex0.UVs[new_face.valid_UV_index["vertex_{}".format(vertex0.ver_index)]]
+            new_ver1_u, new_ver1_v = vertex1.UVs[new_face.valid_UV_index["vertex_{}".format(vertex1.ver_index)]]
 
-    :param new_face:
-    :return:
-    """
-    draw_face(new_face, newUV, init_M, ref_edge)
-    stack = [(new_face, ref_edge, None)]
-    stack_len = 0
-    while stack:
-        new_face, ref_edge, ref_face = stack.pop()
+            S, M = StaticHandler.cal_trans_matrix(ref_ver0_u, ref_ver0_v,
+                                                  ref_ver1_u, ref_ver1_v,
+                                                  new_ver0_u, new_ver0_v,
+                                                  new_ver1_u, new_ver1_v)
+        else:
+            M = init_M[0]
+            S = np.eye(3)
 
-        if not new_face.already_drawn:
-            draw_face(new_face, newUV, ref_edge=ref_edge, ref_face=ref_face)
-            new_face.already_drawn = True
+        ref_point_u = ref_edge.mid_point_UV['face_{}'.format(ref_face.findex)][0]
+        ref_point_v = ref_edge.mid_point_UV['face_{}'.format(ref_face.findex)][1]
 
-        ref_face = new_face
-        for edge in ref_face.edges:
-            if len(edge.faces) == 2:
-                for adjacent_face in edge.faces:
-                    if not adjacent_face.already_drawn:
-                        stack.append((adjacent_face, edge, ref_face))
-        stack_len = max(stack_len, len(stack))
+        ref_point = np.array([ref_point_u, ref_point_v, 0])
 
-    return stack_len
+        for pixel in new_face.pixels:
+            # new_pixel = copy.copy(pixel)
+            new_pixel = TPixel(int(pixel.intensity), tuple(list(pixel.UV)))
+            new_pixel.coor = list(tuple(pixel.coor))
+            UV_list = list(new_pixel.UV)
+            UV_list.append(0)
+            UV_np = np.array(UV_list)
+            new_UV_np = S.dot(ref_point) + (1 - S[0][0]) * UV_np
+            new_UV_np = M.dot(new_UV_np)
+            new_UV_list = new_UV_np.tolist()
+            new_UV_list.pop()
+            new_pixel.UV = tuple(new_UV_list)
+            new_u_pixel_index = round(new_UV_list[0] * 4096)
+            new_v_pixel_index = round(new_UV_list[1] * 4096)
+            intensity = new_pixel.intensity
+            UV_obj.img[new_u_pixel_index][new_v_pixel_index] = intensity
 
+        # 更新ref_edge, ref_face
 
-def check_if_all_faces_drawn(obj: WavefrontObj):
-    status = np.array([face.already_drawn for face in obj.faces_dict.values()], dtype=bool)
-    return status
+    @staticmethod
+    def bfs_iteration(new_face: WFace, ref_edge: WEdge, newUV, init_M):
+        """
+
+        :param new_face:
+        :return:
+        """
+        StaticHandler.draw_face(new_face, newUV, init_M, ref_edge)
+        queue = deque()
+        init_condition = (new_face, ref_edge, None)
+        queue.append(init_condition)
+        stack_len = 0
+        visited_edges = [ref_edge.eindex]
+        while queue:
+            new_face, ref_edge, ref_face = queue.popleft()
+            print(new_face.findex)
+            if not new_face.already_drawn:
+                StaticHandler.draw_face(new_face, newUV, ref_edge=ref_edge, ref_face=ref_face)
+                new_face.already_drawn = True
+                StaticHandler.counter += 1
+                print(StaticHandler.counter)
+
+            ref_face = new_face
+            for edge in ref_face.edges:
+                if len(edge.faces) == 2 and edge.eindex not in visited_edges:
+                    visited_edges.append(edge.eindex)
+                    for adjacent_face in edge.faces:
+                        if not adjacent_face.already_drawn:
+                            queue.append((adjacent_face, edge, ref_face))
+            stack_len = max(stack_len, len(queue))
+
+        return stack_len
+
+    @staticmethod
+    def check_if_all_faces_drawn(obj: WavefrontObj):
+        status = np.array([face.already_drawn for face in obj.faces_dict.values()], dtype=bool)
+        return status
 
 
 if __name__ == '__main__':
     obj = WavefrontObj(wavefront_filepath, texture_filepath)
 
     # Face drawn initialization
-    new_face = obj.faces_dict[1]
+    new_face = obj.faces_dict[100]
     new_edge = new_face.edges[0]
-    new_edge_mid = new_edge.mid_point_UV['face_1']
+    new_edge_mid = new_edge.mid_point_UV['face_100']
 
     ref_edge = WEdge()
-    ref_edge.mid_point_UV = {"face_1": (0.1, 0.1)}
-    ref_edge.length_uv = {0: new_edge.length_uv[1]}
-    ref_edge.angle = {"face_1": new_edge.angle["face_1"]}
+    ref_edge.mid_point_UV = {"face_100": (0.1, 0.1)}
+    ref_edge.length_uv = {0: new_edge.length_uv[100]}
+    ref_edge.angle = {"face_100": new_edge.angle["face_100"]}
     ref_edge.vertices = new_edge.vertices
     ref_edge.eindex = 0
     init_M = np.array([[1, 0, -(new_edge_mid[0] - 0.5)],
@@ -672,12 +696,12 @@ if __name__ == '__main__':
     # 实例化空白画板
     newUV = NewUVUnwrap(obj)
 
-    stack_len = dfs_iteration(new_face, ref_edge, newUV, [init_M])
-    status = check_if_all_faces_drawn(obj)
-    cv2.imshow('1', newUV.img)
-    cv2.waitKey(0)
+    stack_len = StaticHandler.bfs_iteration(new_face, ref_edge, newUV, [init_M])
+    status = StaticHandler.check_if_all_faces_drawn(obj)
     number_of_not_drawn_face = np.count_nonzero(status == False)
 
+    cv2.imshow('1', newUV.img)
+    cv2.waitKey(0)
     plt.figure(dpi=1200)
     plt.imshow(newUV.img)
     plt.savefig('test.jpg')
