@@ -1,11 +1,11 @@
 wavefront_filepath = './testdataset/console_one_piece_output/Texturing/LSCM/texturedMesh.obj'
 texture_filepath = './testdataset/console_one_piece_output/Texturing/LSCM/texture_1001.png'
 import math
-import cv2
-import numpy as np
-import copy
-import matplotlib.pyplot as plt
 from collections import deque
+
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 class TPixel:
@@ -543,10 +543,51 @@ class StaticHandler:
         return
 
     @staticmethod
-    def cal_trans_matrix(Ax1, Ay1, Ax2, Ay2, Bx1, By1, Bx2, By2):
+    def determine_line_with_2_points(point1, point2):
+        """y-y1=(y2-y1)(x-x1)/(x2-x1)"""
+        try:
+            if point1[0] == point2[0]:  # Check for vertical line
+                return f"x = {point1[0]}"
+        except ValueError:
+            print(type(point1[0]), point1[0], point1)
+            print(type(point2[0]), point2[0], point2)
+        slope = (point2[1] - point1[1]) / (point2[0] - point1[0])  # Calculate slope
+        y_intercept = point1[1] - slope * point1[0]  # Calculate y-intercept
+        print(f"y = {slope}x + {y_intercept}")
+        return slope, y_intercept
+
+    @staticmethod
+    def normal_vector_towards_point(slop, ref_point, c):
+        # Possible normal vectors
+        n1 = np.array([-slop, 1])
+        n2 = np.array([slop, -1])
+
+        # Point on the line when x=ref_point[0]
+        point_on_line = np.array([ref_point[0], slop * ref_point[0] + c])
+
+        # Vector from A to point on the line
+        v = point_on_line - np.array([ref_point[0], ref_point[1]])
+
+        # Determine which normal vector forms an acute angle with v
+        if np.dot(n1, v) > 0:
+            return n1, n2
+        else:
+            return n2, n1
+
+    @staticmethod
+    def cal_trans_matrix(Ax1, Ay1, Ax2, Ay2, Ax3, Ay3, Bx1, By1, Bx2, By2, Bx3, By3, ):
+        """
+        边A移动到边B。A是新边，B是ref边
+        """
         # 计算边A和边B的长度
         LA = np.sqrt((Ax2 - Ax1) ** 2 + (Ay2 - Ay1) ** 2)  # ref
         LB = np.sqrt((Bx2 - Bx1) ** 2 + (By2 - By1) ** 2)  # new
+
+        # 计算ref_edge（B直线）的斜率和截距
+        slop_B, interc_B = StaticHandler.determine_line_with_2_points((Bx1, By1), (Bx2, By2))
+
+        # 计算ref_edge 在 ref_face 中的法向量
+        norm_ref_face_org, norm_ref_face_conj = StaticHandler.normal_vector_towards_point(slop_B, (Bx3, By3), interc_B)
 
         # 计算边A和边B的中点坐标
         Axm, Aym = (Ax1 + Ax2) / 2, (Ay1 + Ay2) / 2  # ref
@@ -560,8 +601,6 @@ class StaticHandler:
         # scale = LB / LA
         scale = LA / LB
 
-        # if scale > 2:  # todo: delete after debug
-        #     scale = 2
         S = np.array([[1 - scale, 0, 0],
                       [0, 1 - scale, 0],
                       [0, 0, 1]])
@@ -574,13 +613,40 @@ class StaticHandler:
         #     tmp = -1
         theta = np.arccos(tmp)
 
+        theta_list = [theta, -theta, math.pi - theta, theta - math.pi]
+
         # 规定逆时针旋转为正方向　TODO: 考虑所有的可能
-        if theta < np.pi:
-            inverse_theta = -(np.pi - theta)
+        # if theta < np.pi:
+        #     inverse_theta = -(np.pi - theta)
 
         # 计算边A到边B的旋转矩阵
-        R = np.array([[np.cos(theta), -np.sin(theta)],
-                      [np.sin(theta), np.cos(theta)]])
+        R_list = []
+        for theta in theta_list:
+            R = np.array([[np.cos(theta), -np.sin(theta)],
+                          [np.sin(theta), np.cos(theta)]])
+            R_list.append(R)
+
+        for R in R_list:
+            rotated_Ax1, rotated_Ay1 = R.dot(np.array([Ax1, Ay1]))
+
+            rotated_Ax2,rotated_Ay2 = R.dot(np.array([Ax2, Ay2]))
+
+            rotated_Ax3, rotated_Ay3 = R.dot(np.array([Ax3, Ay3]))
+
+            slop_rotated_A, interc_rotated_A = StaticHandler.determine_line_with_2_points(
+                (rotated_Ax1, rotated_Ay1),
+                (rotated_Ax2, rotated_Ay2)
+            )
+
+            norm_new_face_org, norm_new_face_conj = StaticHandler.normal_vector_towards_point(
+                slop_rotated_A,
+                (rotated_Ax3, rotated_Ay3),
+                interc_rotated_A,
+            )
+            if norm_new_face_org.any() != norm_ref_face_conj.any():
+                R_list.remove(R)
+
+        R = R_list[0]
 
         # 计算mid point temp
         mid_point_new = np.array([[Bxm], [Bym]])
@@ -595,6 +661,7 @@ class StaticHandler:
 
         # 计算边A到边B的变换矩阵
         M = np.concatenate((np.concatenate((R, T), axis=1), np.array([[0, 0, 1]])), axis=0)
+
         if np.isnan(M).any():
             raise "NaN detected"
         return S, M
@@ -616,18 +683,43 @@ class StaticHandler:
             new_ver0_u, new_ver0_v = vertex0.UVs[new_face.valid_UV_index["vertex_{}".format(vertex0.ver_index)]]
             new_ver1_u, new_ver1_v = vertex1.UVs[new_face.valid_UV_index["vertex_{}".format(vertex1.ver_index)]]
 
-            S, M = StaticHandler.cal_trans_matrix(ref_ver0_u, ref_ver0_v,
-                                                  ref_ver1_u, ref_ver1_v,
-                                                  new_ver0_u, new_ver0_v,
-                                                  new_ver1_u, new_ver1_v)
+            # 拿到 ref_face 中的第三点
+            ref_ver2 = []
+            for vertex in ref_face.vertices:
+                if vertex != vertex1 and vertex != vertex0:
+                    ref_ver2.append(vertex)
+            ref_ver2 = ref_ver2[0]
+            ref_ver2_u, ref_ver2_v = ref_ver2.UVs[ref_face.valid_UV_index["vertex_{}".format(ref_ver2.ver_index)]]
+
+            # 拿到 new_face 中的第三点
+            new_ver2 = []
+
+            for vertex in new_face.vertices:
+                if vertex != vertex1 and vertex != vertex0:
+                    new_ver2.append(vertex)
+            new_ver2 = new_ver2[0]
+            new_ver2_u, new_ver2_v = new_ver2.UVs[new_face.valid_UV_index["vertex_{}".format(new_ver2.ver_index)]]
+
+            S, M = StaticHandler.cal_trans_matrix(
+                new_ver0_u, new_ver0_v,
+                new_ver1_u, new_ver1_v,
+                new_ver2_u, new_ver2_v,
+                ref_ver0_u, ref_ver0_v,
+                ref_ver1_u, ref_ver1_v,
+                ref_ver2_u, ref_ver2_v
+            )
         else:
-            M = init_M[0]
+            M = np.array(init_M)
             S = np.eye(3)
         S = np.eye(3)
         ref_point_u = ref_edge.mid_point_UV['face_{}'.format(ref_face.findex)][0]
         ref_point_v = ref_edge.mid_point_UV['face_{}'.format(ref_face.findex)][1]
 
         ref_point = np.array([ref_point_u, ref_point_v, 0])
+
+        # 判断变换后的新边中点是否和ref中点重合，不重合的话就把M从M_list里剔除掉
+        # for M in M_list:
+        #     if
 
         for pixel in new_face.pixels:
             # new_pixel = copy.copy(pixel)
@@ -714,14 +806,14 @@ if __name__ == '__main__':
     ref_edge.angle = {face_str: new_edge.angle[face_str]}
     ref_edge.vertices = new_edge.vertices
     ref_edge.eindex = 0
-    init_M = np.array([[1, 0, -(new_edge_mid[0] - 0.5)],
+    init_M = [[1, 0, -(new_edge_mid[0] - 0.5)],
                        [0, 1, -(new_edge_mid[1] - 0.5)],
-                       [0, 0, 1]])
+                       [0, 0, 1]]
 
     # 实例化空白画板
     newUV = NewUVUnwrap(obj)
 
-    stack_len = StaticHandler.bfs_iteration(new_face, ref_edge, newUV, [init_M])
+    stack_len = StaticHandler.bfs_iteration(new_face, ref_edge, newUV, init_M)
     status = StaticHandler.check_if_all_faces_drawn(obj)
     number_of_not_drawn_face = np.count_nonzero(status == False)
 
