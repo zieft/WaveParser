@@ -1,5 +1,5 @@
-wavefront_filepath = './testdataset/console_one_piece_output/Texturing/LSCM/texturedMesh.obj'
-texture_filepath = './testdataset/console_one_piece_output/Texturing/LSCM/texture_1001.png'
+wavefront_filepath = './testdataset/simple/texturedMesh.obj'
+texture_filepath = './testdataset/simple/texture_1001.png'
 import math
 from collections import deque
 
@@ -37,7 +37,8 @@ class TextureObj:
     __slots__ = [
         'filepath',  # path of the texture file
         'img',  # texture stored as ndarray
-        'pixelated_img'  # pixelated image
+        'pixelated_img',  # pixelated image
+        'image_size',  # image should be a square
     ]
 
     def __init__(self, filepath):
@@ -47,10 +48,11 @@ class TextureObj:
 
     def img_read(self):
         img = cv2.imread(self.filepath, cv2.IMREAD_GRAYSCALE)
+        self.image_size = img.shape[0]
         return img
 
     def init_pixels(self):
-        img = np.zeros((4096, 4096), dtype='O')
+        img = np.zeros((self.image_size, self.image_size), dtype='O')
         for i in range(img.shape[0]):
             for j in range(img.shape[1]):
                 u = j / self.img.shape[0]
@@ -264,36 +266,16 @@ class WFace:
 
         return mask
 
-    def find_pixels_crossproduct(self):
+    def find_pixels_crossproduct_vec(self, pixelized_img, image_size):
         i = self.valid_UV_index['vertex_{}'.format(self.vertices[0].ver_index)]
         j = self.valid_UV_index['vertex_{}'.format(self.vertices[1].ver_index)]
         k = self.valid_UV_index['vertex_{}'.format(self.vertices[2].ver_index)]
-        p1 = (round(self.vertices[0].UVs[i][0] * 4096), round(self.vertices[0].UVs[i][1] * 4096))
-        p2 = (round(self.vertices[1].UVs[j][0] * 4096), round(self.vertices[1].UVs[j][1] * 4096))
-        p3 = (round(self.vertices[2].UVs[k][0] * 4096), round(self.vertices[2].UVs[k][1] * 4096))
-        min_x = min(p1[0], p2[0], p3[0])
-        max_x = max(p1[0], p2[0], p3[0])
-        min_y = min(p1[1], p2[1], p3[1])
-        max_y = max(p1[1], p2[1], p3[1])
-
-        triangle_pixels = set()
-
-        # 对于每个像素点 (x, y) 在最小和最大坐标范围内
-        for x in range(min_x, max_x + 1):
-            for y in range(min_y, max_y + 1):
-                # 判断当前像素点是否在三角形内部
-                if self._point_in_triangle((x, y), p1, p2, p3):
-                    triangle_pixels.add((x, y))
-
-        self.pixels = triangle_pixels
-
-    def find_pixels_crossproduct_vec(self, pixelized_img):
-        i = self.valid_UV_index['vertex_{}'.format(self.vertices[0].ver_index)]
-        j = self.valid_UV_index['vertex_{}'.format(self.vertices[1].ver_index)]
-        k = self.valid_UV_index['vertex_{}'.format(self.vertices[2].ver_index)]
-        p1 = (round(self.vertices[0].UVs[i][0] * 4096), 4096 - round(self.vertices[0].UVs[i][1] * 4096))
-        p2 = (round(self.vertices[1].UVs[j][0] * 4096), 4096 - round(self.vertices[1].UVs[j][1] * 4096))
-        p3 = (round(self.vertices[2].UVs[k][0] * 4096), 4096 - round(self.vertices[2].UVs[k][1] * 4096))
+        p1 = (
+            round(self.vertices[0].UVs[i][0] * image_size), image_size - round(self.vertices[0].UVs[i][1] * image_size))
+        p2 = (
+            round(self.vertices[1].UVs[j][0] * image_size), image_size - round(self.vertices[1].UVs[j][1] * image_size))
+        p3 = (
+            round(self.vertices[2].UVs[k][0] * image_size), image_size - round(self.vertices[2].UVs[k][1] * image_size))
 
         min_x = np.min([p1[0], p2[0], p3[0]])
         max_x = np.max([p1[0], p2[0], p3[0]])
@@ -345,21 +327,21 @@ class WFace:
         # 求解矩阵
         self.mapping_matrix = np.linalg.solve(coeff_matrix, const_matrix)
 
-    def determine_valid_UV_index(self):
+    def determine_valid_UV_index(self, image_size):
         """ determine the distances between 3 vertices """
         for i in range(len(self.vertices[0].UVs)):
             for j in range(len(self.vertices[1].UVs)):
                 for k in range(len(self.vertices[2].UVs)):
                     try:
-                        ver1 = (self.vertices[0].UVs[i][0] * 4096, self.vertices[0].UVs[i][1] * 4096)
+                        ver1 = (self.vertices[0].UVs[i][0] * image_size, self.vertices[0].UVs[i][1] * image_size)
                     except IndexError:
                         continue
                     try:
-                        ver2 = (self.vertices[1].UVs[j][0] * 4096, self.vertices[1].UVs[j][1] * 4096)
+                        ver2 = (self.vertices[1].UVs[j][0] * image_size, self.vertices[1].UVs[j][1] * image_size)
                     except IndexError:
                         continue
                     try:
-                        ver3 = (self.vertices[2].UVs[k][0] * 4096, self.vertices[2].UVs[k][1] * 4096)
+                        ver3 = (self.vertices[2].UVs[k][0] * image_size, self.vertices[2].UVs[k][1] * image_size)
                     except IndexError:
                         continue
 
@@ -464,7 +446,7 @@ class WavefrontObj:
                         WFace.existent[
                             '{},{},{}'.format(vertex_indices[0], vertex_indices[1], vertex_indices[2])] = face.findex
                         face.vertices = wvertices
-                        face.determine_valid_UV_index()
+                        face.determine_valid_UV_index(self.texture.image_size)
 
                         for i in range(len(face.vertices)):
                             for j in range(i + 1, len(face.vertices)):
@@ -489,7 +471,7 @@ class WavefrontObj:
                     texture_shape = self.texture.img.shape
                     face.determine_mapping_matrix_2d_to_3d()
                     face.cal_area(texture_shape)
-                    face.find_pixels_crossproduct_vec(self.texture.pixelated_img)
+                    face.find_pixels_crossproduct_vec(self.texture.pixelated_img, self.texture.image_size)
                     faces_dict[face_index] = face
                     face_index += 1
 
@@ -498,19 +480,19 @@ class WavefrontObj:
 
 
 class NewUVUnwrap:
-    def __init__(self, wavefront_obj):
+    def __init__(self, wavefront_obj: WavefrontObj):
         self.wavefront_obj = wavefront_obj
-        self.img = np.zeros((4096 * 2, 4096 * 2))
+        self.img = np.zeros((self.wavefront_obj.texture.image_size * 2, self.wavefront_obj.texture.image_size * 2))
 
 
 class StaticHandler:
     counter = 0
 
     @staticmethod
-    def get_vertices(index):
+    def get_vertices(index, image_size):
         ver = obj.vertices_dict[index]
 
-        print(ver.UVs[0][0] * 4096, 4096 - ver.UVs[0][1] * 4096)
+        print(ver.UVs[0][0] * image_size, image_size - ver.UVs[0][1] * image_size)
 
     @staticmethod
     def get_edge(ver1, ver2):
@@ -629,7 +611,7 @@ class StaticHandler:
         for R in R_list:
             rotated_Ax1, rotated_Ay1 = R.dot(np.array([Ax1, Ay1]))
 
-            rotated_Ax2,rotated_Ay2 = R.dot(np.array([Ax2, Ay2]))
+            rotated_Ax2, rotated_Ay2 = R.dot(np.array([Ax2, Ay2]))
 
             rotated_Ax3, rotated_Ay3 = R.dot(np.array([Ax3, Ay3]))
 
@@ -667,7 +649,8 @@ class StaticHandler:
         return S, M
 
     @staticmethod
-    def draw_face(new_face: WFace, UV_obj, init_M=None, ref_edge: WEdge = None, ref_face: WFace = None, ):
+    def draw_face(new_face: WFace, UV_obj, init_M=None, ref_edge: WEdge = None, ref_face: WFace = None,
+                  image_size=4096):
         """"""
         if not ref_face:
             ref_face = new_face
@@ -737,8 +720,8 @@ class StaticHandler:
             new_UV_list = new_UV_np.tolist()
             new_UV_list.pop()
             new_pixel.UV = tuple(new_UV_list)
-            new_u_pixel_index = round(new_UV_list[0] * 4096)
-            new_v_pixel_index = round(new_UV_list[1] * 4096)
+            new_u_pixel_index = round(new_UV_list[0] * image_size)
+            new_v_pixel_index = round(new_UV_list[1] * image_size)
             intensity = new_pixel.intensity
             UV_obj.img[new_u_pixel_index][new_v_pixel_index] = intensity
         # img = UV_obj.img.copy()
@@ -758,7 +741,8 @@ class StaticHandler:
         :param new_face:
         :return:
         """
-        StaticHandler.draw_face(new_face, newUV, init_M, ref_edge)
+        image_size = newUV.wavefront_obj.texture.image_size
+        StaticHandler.draw_face(new_face, newUV, init_M, ref_edge, image_size=image_size)
         queue = deque()
         init_condition = (new_face, ref_edge, None)
         queue.append(init_condition)
@@ -768,7 +752,7 @@ class StaticHandler:
             new_face, ref_edge, ref_face = queue.popleft()
             # print(new_face.findex)
             if not new_face.already_drawn:
-                StaticHandler.draw_face(new_face, newUV, ref_edge=ref_edge, ref_face=ref_face)
+                StaticHandler.draw_face(new_face, newUV, ref_edge=ref_edge, ref_face=ref_face, image_size=image_size)
                 new_face.already_drawn = True
                 StaticHandler.counter += 1
                 print(StaticHandler.counter)
@@ -794,7 +778,7 @@ if __name__ == '__main__':
     obj = WavefrontObj(wavefront_filepath, texture_filepath)
 
     # Face drawn initialization
-    start_index = 100
+    start_index = 1
     face_str = 'face_{}'.format(start_index)
     new_face = obj.faces_dict[start_index]
     new_edge = new_face.edges[0]
@@ -807,8 +791,8 @@ if __name__ == '__main__':
     ref_edge.vertices = new_edge.vertices
     ref_edge.eindex = 0
     init_M = [[1, 0, -(new_edge_mid[0] - 0.5)],
-                       [0, 1, -(new_edge_mid[1] - 0.5)],
-                       [0, 0, 1]]
+              [0, 1, -(new_edge_mid[1] - 0.5)],
+              [0, 0, 1]]
 
     # 实例化空白画板
     newUV = NewUVUnwrap(obj)
@@ -817,8 +801,8 @@ if __name__ == '__main__':
     status = StaticHandler.check_if_all_faces_drawn(obj)
     number_of_not_drawn_face = np.count_nonzero(status == False)
 
-    cv2.imshow('1', newUV.img)
-    cv2.waitKey(0)
+    # cv2.imshow('1', newUV.img)
+    # cv2.waitKey(0)
     plt.figure(dpi=1200)
     plt.imshow(newUV.img)
     plt.savefig('test.jpg')
