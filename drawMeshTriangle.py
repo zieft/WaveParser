@@ -1,8 +1,12 @@
+import os
+
 import cv2
-import numpy as np
-import pandas as pd
-from PIL import ImageDraw
 import matplotlib.pyplot as plt
+import pandas as pd
+
+mesh_path = 'testdataset/simple/texturedMesh.obj'
+texture_path = 'testdataset/simple/texture_1001.png'
+output_path = os.path.dirname(texture_path)
 
 
 def parse_wavefront_obj(file_path):
@@ -29,8 +33,7 @@ def parse_wavefront_obj(file_path):
     return df_vertices, df_tex_coords, df_faces
 
 
-
-vertices, tex_coords, faces = parse_wavefront_obj(r'C:\Users\zieft\Desktop\testdataset\ggr_yz_console_small_remeshed\texturedMesh.obj')
+vertices, tex_coords, faces = parse_wavefront_obj(mesh_path)
 
 
 def replace_indices_with_coordinates(faces, vertices, tex_coords):
@@ -83,7 +86,6 @@ def replace_indices_with_coordinates(faces, vertices, tex_coords):
     return vertex_1, vertex_2, vertex_3, texture_1, texture_2, texture_3
 
 
-
 vertex_1, vertex_2, vertex_3, texture_1, texture_2, texture_3 = replace_indices_with_coordinates(faces, vertices,
                                                                                                  tex_coords)
 
@@ -91,7 +93,8 @@ P1 = faces['Vertex1'].str.split('/').str[1].astype(int)
 P2 = faces['Vertex2'].str.split('/').str[1].astype(int)
 P3 = faces['Vertex3'].str.split('/').str[1].astype(int)
 
-im = cv2.imread(r'C:\Users\zieft\Desktop\testdataset\ggr_yz_console_small_remeshed\texture_1001.png')
+im = cv2.imread(texture_path)
+im_size = im.shape[0]
 
 
 def draw_triangle(im, p1, p2, p3):
@@ -111,12 +114,12 @@ def draw_triangle(im, p1, p2, p3):
 
 
 for i, j, k in zip(P1, P2, P3):
-    p1 = (int(float(tex_coords.loc[i].U) * 4096), int((1-float(tex_coords.loc[i].V)) * 4096))
-    p2 = (int(float(tex_coords.loc[j].U) * 4096), int((1-float(tex_coords.loc[j].V)) * 4096))
-    p3 = (int(float(tex_coords.loc[k].U) * 4096), int((1-float(tex_coords.loc[k].V)) * 4096))
+    p1 = (int(float(tex_coords.loc[i].U) * im_size), int((1 - float(tex_coords.loc[i].V)) * im_size))
+    p2 = (int(float(tex_coords.loc[j].U) * im_size), int((1 - float(tex_coords.loc[j].V)) * im_size))
+    p3 = (int(float(tex_coords.loc[k].U) * im_size), int((1 - float(tex_coords.loc[k].V)) * im_size))
 
     im = draw_triangle(im, p1, p2, p3)
 
 plt.imshow(im)
 plt.show()
-cv2.imwrite(r"C:\Users\zieft\Desktop\testdataset\ggr_yz_console_small_remeshed\mesh.png", im)
+cv2.imwrite(r'C:\Users\zieft\PycharmProjects\WaveParser\testdataset\simple\mesh.png', im)
