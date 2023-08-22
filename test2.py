@@ -73,16 +73,18 @@ class WVertex:
         'uv_index',  # index of vertex in Blender
         'UVs',  # a list of UV coordinate(s)
         'neighbors',  # list of neighbor Vertices
-        'faces'  # list of faces, in which the vertex belongs to
+        'faces',  # list of faces, in which the vertex belongs to
+        'valid_uv_index_for_face',
     ]
 
     def __init__(self, coor):
         self.coor = coor  # tuple
         self.ver_index = 0
-        self.uv_index = 0  # blender里的顶点索引，实际上为uv_index - 1 （blender索引从0起始）
+        self.uv_index = []  # blender里的顶点索引，实际上为uv_index - 1 （blender索引从0起始）
         self.UVs = []  # list of  uv indices, 一个顶点有可能对应不同的uv坐标
         self.neighbors = []  # list of WVertex objects.
         self.faces = []  # list of WFace objects. 表示此顶点属于哪些面
+        self.valid_uv_index_for_face = -1
 
     def __str__(self):
         return 'Ver：' + str(self.ver_index)
@@ -94,7 +96,7 @@ class WVertex:
         self.ver_index = index
 
     def uv_index_setter(self, index):
-        self.uv_index = index
+        self.uv_index.append(index)
 
     def UVs_setter(self, UV):
         if UV not in self.UVs:
@@ -181,7 +183,7 @@ class WFace:
         self.mapping_matrix = None  # UV map to 3D
         self.edges = []
         self.already_drawn = False
-        self.valid_UV_index = None
+        self.valid_UV_index = {}
         # self.texture_uv = [(), ()]  不需要额外记录uv，因为vertex自带uv
 
     def __str__(self):
@@ -329,6 +331,8 @@ class WFace:
 
     def determine_valid_UV_index(self, image_size):
         """ determine the distances between 3 vertices """
+        # todo: 已经采用了新方法，但是还没有经过测试，设计一个单元测试来测试一下。
+        threshold = image_size / 5
         for i in range(len(self.vertices[0].UVs)):
             for j in range(len(self.vertices[1].UVs)):
                 for k in range(len(self.vertices[2].UVs)):
@@ -349,7 +353,7 @@ class WFace:
                     dis2 = math.sqrt((ver3[0] - ver1[0]) ** 2 + (ver3[1] - ver1[1]) ** 2)
                     dis3 = math.sqrt((ver2[0] - ver3[0]) ** 2 + (ver2[1] - ver3[1]) ** 2)
 
-                    if dis1 < 100 and dis2 < 100 and dis3 < 100:
+                    if dis1 < threshold and dis2 < threshold and dis3 < threshold:
                         self.valid_UV_index = {
                             'vertex_{}'.format(self.vertices[0].ver_index): i,
                             'vertex_{}'.format(self.vertices[1].ver_index): j,
@@ -430,23 +434,28 @@ class WavefrontObj:
                     vertex_indices = [int(x.split('/')[0]) for x in elements[1:]]
                     uv_indices = [int(x.split('/')[1]) for x in elements[1:]]
                     wvertices = []
+                    face = WFace()
+                    face.findex = face_index
                     if '{},{},{}'.format(vertex_indices[0], vertex_indices[1], vertex_indices[2]) not in WFace.existent:
                         for i in range(3):  # a new_face is always a triangle, therefore iterate 3 times.
                             ver = self.vertices_dict[vertex_indices[i]]
-                            ver.ver_index_setter(vertex_indices[i])
-                            ver.uv_index_setter(uv_indices[i])
-                            ver.UVs_setter(self.UVs_dict[uv_indices[i]])
+                            # ver.uv_index_setter(uv_indices[i])
+                            # ver.valid_uv_index_for_face = -1
+                            if uv_indices[i] not in ver.uv_index:
+                                ver.ver_index_setter(vertex_indices[i])
+                                ver.uv_index_setter(uv_indices[i])
+                                ver.UVs_setter(self.UVs_dict[uv_indices[i]])
+                                ver.valid_uv_index_for_face += 1
+                            face.valid_UV_index['vertex_{}'.format(vertex_indices[i])] = ver.valid_uv_index_for_face
                             neighbors = [x for x in vertex_indices if x != vertex_indices[i]]
                             ver.neighbor_setter(neighbors)
                             wvertices.append(ver)
-                            if face_index not in ver.faces:
-                                ver.faces_setter(face_index)
-                        face = WFace()
-                        face.findex = face_index
+                            if face not in ver.faces:
+                                ver.faces_setter(face)
                         WFace.existent[
                             '{},{},{}'.format(vertex_indices[0], vertex_indices[1], vertex_indices[2])] = face.findex
                         face.vertices = wvertices
-                        face.determine_valid_UV_index(self.texture.image_size)
+                        # face.determine_valid_UV_index(self.texture.image_size)
 
                         for i in range(len(face.vertices)):
                             for j in range(i + 1, len(face.vertices)):
@@ -559,7 +568,7 @@ class StaticHandler:
     @staticmethod
     def cal_trans_matrix(Ax1, Ay1, Ax2, Ay2, Ax3, Ay3, Bx1, By1, Bx2, By2, Bx3, By3, ):
         """
-        边A移动到边B。A是新边，B是ref边
+        边A移动到边B。A是新边，B是ref边。第3点为公共边外的那个点。
         """
         # 计算边A和边B的长度
         LA = np.sqrt((Ax2 - Ax1) ** 2 + (Ay2 - Ay1) ** 2)  # ref
@@ -651,7 +660,16 @@ class StaticHandler:
     @staticmethod
     def draw_face(new_face: WFace, UV_obj, init_M=None, ref_edge: WEdge = None, ref_face: WFace = None,
                   image_size=4096):
-        """"""
+        """
+
+        :param new_face:    Face A
+        :param UV_obj:
+        :param init_M:      initial transformation matrix for to handle first Face
+        :param ref_edge:    Common Edge of face B
+        :param ref_face:    Face B
+        :param image_size:
+        :return:
+        """
         if not ref_face:
             ref_face = new_face
 
