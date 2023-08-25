@@ -566,11 +566,66 @@ class StaticHandler:
             return n2, n1
 
     @staticmethod
-    def cal_trans_matrix(Ax1, Ay1, Ax2, Ay2, Ax3, Ay3, Bx1, By1, Bx2, By2, Bx3, By3, ):
+    def get_unit_vector(x1, y1, x2, y2, x3, y3):
+        m_AB = (y2 - y1) / (x2 - x1)
+
+        m_l = -1 / m_AB
+
+        x4 = (y3 - y1 + m_AB * x1 + x3 * m_l) / (m_l + m_AB)
+        y4 = m_AB * (x4 - x1) + y1
+
+        DC_x = x3 - x4
+        DC_y = y3 - y4
+
+        magnitude_DC = (DC_x ** 2 + DC_y ** 2) ** 0.5
+
+        unit_DC_x = DC_x / magnitude_DC
+        unit_DC_y = DC_y / magnitude_DC
+
+        return unit_DC_x, unit_DC_y
+
+    @staticmethod
+    def cal_rot_mat(
+            theta: np.float64,
+            Ax1, Ay1, Ax2, Ay2, Ax3, Ay3,
+            Bx1, By1, Bx2, By2, Bx3, By3,
+    ):
+        theta_list = [theta, -theta, math.pi - theta, theta - math.pi]
+
+        R_list = []
+        for theta in theta_list:
+            R = np.array([[np.cos(theta), -np.sin(theta)],
+                          [np.sin(theta), np.cos(theta)]])
+            R_list.append(R)
+
+        ref_norm_unit_u, ref_norm_unit_v = StaticHandler.get_unit_vector(Bx1, By1, Bx2, By2, Bx3, By3)
+        R = None
+        for R_tmp in R_list:
+            rotated_Ax1, rotated_Ay1 = R_tmp.dot(np.array([Ax1, Ay1]))
+            rotated_Ax2, rotated_Ay2 = R_tmp.dot(np.array([Ax2, Ay2]))
+            rotated_Ax3, rotated_Ay3 = R_tmp.dot(np.array([Ax3, Ay3]))
+
+            rotated_norm_unit_u, rotated_norm_unit_v = StaticHandler.get_unit_vector(rotated_Ax1, rotated_Ay1,
+                                                                                     rotated_Ax2, rotated_Ay2,
+                                                                                     rotated_Ax3, rotated_Ay3
+                                                                                     )
+
+            # check if this two unit vector have opposite direction
+            dot_product = ref_norm_unit_u * rotated_norm_unit_u + ref_norm_unit_v * rotated_norm_unit_v
+            if abs(dot_product + 1) < 1e-10:  # 这里的阈值需要进行讨论，1e-15是false， 1e-16是true
+                R = R_tmp
+        return R
+
+    @staticmethod
+    def cal_trans_matrix(points_from_A, points_from_B):
         """
         边A移动到边B。A是新边，B是ref边。第3点为公共边外的那个点。
         """
-        # 计算边A和边B的长度
+
+        # 计算边A和边B的长度nts((Bx1, By1), (Bx2, By2))
+        Ax1, Ay1, Ax2, Ay2, Ax3, Ay3 = points_from_A
+        Bx1, By1, Bx2, By2, Bx3, By3 = points_from_B
+
         LA = np.sqrt((Ax2 - Ax1) ** 2 + (Ay2 - Ay1) ** 2)  # ref
         LB = np.sqrt((Bx2 - Bx1) ** 2 + (By2 - By1) ** 2)  # new
 
@@ -604,40 +659,11 @@ class StaticHandler:
         #     tmp = -1
         theta = np.arccos(tmp)
 
-        theta_list = [theta, -theta, math.pi - theta, theta - math.pi]
-
-        # 规定逆时针旋转为正方向　TODO: 考虑所有的可能
-        # if theta < np.pi:
-        #     inverse_theta = -(np.pi - theta)
-
-        # 计算边A到边B的旋转矩阵
-        R_list = []
-        for theta in theta_list:
-            R = np.array([[np.cos(theta), -np.sin(theta)],
-                          [np.sin(theta), np.cos(theta)]])
-            R_list.append(R)
-
-        for R in R_list:
-            rotated_Ax1, rotated_Ay1 = R.dot(np.array([Ax1, Ay1]))
-
-            rotated_Ax2, rotated_Ay2 = R.dot(np.array([Ax2, Ay2]))
-
-            rotated_Ax3, rotated_Ay3 = R.dot(np.array([Ax3, Ay3]))
-
-            slop_rotated_A, interc_rotated_A = StaticHandler.determine_line_with_2_points(
-                (rotated_Ax1, rotated_Ay1),
-                (rotated_Ax2, rotated_Ay2)
-            )
-
-            norm_new_face_org, norm_new_face_conj = StaticHandler.normal_vector_towards_point(
-                slop_rotated_A,
-                (rotated_Ax3, rotated_Ay3),
-                interc_rotated_A,
-            )
-            if norm_new_face_org.any() != norm_ref_face_conj.any():
-                R_list.remove(R)
-
-        R = R_list[0]
+        R = StaticHandler.cal_rot_mat(
+            theta,
+            Ax1, Ay1, Ax2, Ay2, Ax3, Ay3,
+            Bx1, By1, Bx2, By2, Bx3, By3
+        )
 
         # 计算mid point temp
         mid_point_new = np.array([[Bxm], [Bym]])
@@ -702,12 +728,12 @@ class StaticHandler:
             new_ver2_u, new_ver2_v = new_ver2.UVs[new_face.valid_UV_index["vertex_{}".format(new_ver2.ver_index)]]
 
             S, M = StaticHandler.cal_trans_matrix(
-                new_ver0_u, new_ver0_v,
-                new_ver1_u, new_ver1_v,
-                new_ver2_u, new_ver2_v,
-                ref_ver0_u, ref_ver0_v,
-                ref_ver1_u, ref_ver1_v,
-                ref_ver2_u, ref_ver2_v
+                (new_ver0_u, new_ver0_v,
+                 new_ver1_u, new_ver1_v,
+                 new_ver2_u, new_ver2_v),
+                (ref_ver0_u, ref_ver0_v,
+                 ref_ver1_u, ref_ver1_v,
+                 ref_ver2_u, ref_ver2_v)
             )
         else:
             M = np.array(init_M)
