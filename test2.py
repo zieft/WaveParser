@@ -626,14 +626,21 @@ class StaticHandler:
         Ax1, Ay1, Ax2, Ay2, Ax3, Ay3 = points_from_A
         Bx1, By1, Bx2, By2, Bx3, By3 = points_from_B
 
+        A_x_coords = [Ax1, Ax2, Ax3]
+        A_y_coords = [Ay1, Ay2, Ay3]
+
         LA = np.sqrt((Ax2 - Ax1) ** 2 + (Ay2 - Ay1) ** 2)  # ref
         LB = np.sqrt((Bx2 - Bx1) ** 2 + (By2 - By1) ** 2)  # new
 
         # 计算ref_edge（B直线）的斜率和截距
         slop_B, interc_B = StaticHandler.determine_line_with_2_points((Bx1, By1), (Bx2, By2))
 
-        # 计算ref_edge 在 ref_face 中的法向量
-        norm_ref_face_org, norm_ref_face_conj = StaticHandler.normal_vector_towards_point(slop_B, (Bx3, By3), interc_B)
+        # Store coordinates as column vectors
+        A = np.array([[Ax1, Ax2, Ax3], [Ay1, Ay2, Ay3]])
+        B = np.array([[Bx1, Bx2, Bx3], [By1, By2, By3]])
+
+        # # 计算ref_edge 在 ref_face 中的法向量
+        # norm_ref_face_org, norm_ref_face_conj = StaticHandler.normal_vector_towards_point(slop_B, (Bx3, By3), interc_B)
 
         # 计算边A和边B的中点坐标
         Axm, Aym = (Ax1 + Ax2) / 2, (Ay1 + Ay2) / 2  # ref
@@ -643,45 +650,57 @@ class StaticHandler:
         VA = np.array([Ax2 - Ax1, Ay2 - Ay1])  # ref
         VB = np.array([Bx2 - Bx1, By2 - By1])  # new
 
-        # 计算边A到边B的缩放比例
-        # scale = LB / LA
-        scale = LA / LB
-
-        S = np.array([[1 - scale, 0, 0],
-                      [0, 1 - scale, 0],
-                      [0, 0, 1]])
-
         # 计算边A和边B的旋转角度
         tmp = np.dot(VB, VA) / (LA * LB)
         if tmp > 1:
             tmp = 1
-        # elif tmp < -1:
-        #     tmp = -1
         theta = np.arccos(tmp)
 
-        R = StaticHandler.cal_rot_mat(
+        # 计算旋转矩阵
+        rotate_matrix = StaticHandler.cal_rot_mat(
             theta,
             Ax1, Ay1, Ax2, Ay2, Ax3, Ay3,
             Bx1, By1, Bx2, By2, Bx3, By3
         )
 
-        # 计算mid point temp
-        mid_point_new = np.array([[Bxm], [Bym]])
-        mid_point_temp = R.dot(mid_point_new)
+        # Rotate the vertices of Triangle A
+        A_rotated = np.dot(rotate_matrix, np.array([A_x_coords[:-1], A_y_coords[:-1]]))
 
-        # 计算边A到边B的平移矩阵
-        mid_point_ref = np.array([[Axm], [Aym]])
-        T = mid_point_ref - mid_point_temp
+        # Find midpoint of the arrowed edge for the blue triangle
+        midpoint_B = np.array([(Bx1 + Bx2) / 2, (By1 + By2) / 2])
+
+        # Find midpoint of the arrowed edge for the rotated yellow triangle
+        midpoint_A_rotated = np.array(
+            [(A_rotated[0][0] + A_rotated[0][1]) / 2,
+             (A_rotated[1][0] + A_rotated[1][1]) / 2])
+
+        # Compute the translation vector
+        translation_vector = midpoint_B - midpoint_A_rotated
+
+        # 计算边A到边B的缩放比例
+        scale_factor = LB / LA
+
+        # S = np.array([[1 - scale_factor, 0, 0],
+        #               [0, 1 - scale_factor, 0],
+        #               [0, 0, 1]])
+
+        # # 计算mid point temp
+        # mid_point_new = np.array([[Bxm], [Bym]])
+        # mid_point_temp = R.dot(mid_point_new)
+
+        # # 计算边A到边B的平移矩阵
+        # mid_point_ref = np.array([[Axm], [Aym]])
+        # T = mid_point_ref - mid_point_temp
 
         # T = np.array([[Axm - Bxm],
         #               [Aym - Bym]])
 
         # 计算边A到边B的变换矩阵
-        M = np.concatenate((np.concatenate((R, T), axis=1), np.array([[0, 0, 1]])), axis=0)
+        M = np.concatenate((np.concatenate((rotate_matrix, translation_vector), axis=1), np.array([[0, 0, 1]])), axis=0)
 
         if np.isnan(M).any():
             raise "NaN detected"
-        return S, M
+        return scale_factor, M
 
     @staticmethod
     def draw_face(new_face: WFace, UV_obj, init_M=None, ref_edge: WEdge = None, ref_face: WFace = None,
@@ -727,7 +746,7 @@ class StaticHandler:
             new_ver2 = new_ver2[0]
             new_ver2_u, new_ver2_v = new_ver2.UVs[new_face.valid_UV_index["vertex_{}".format(new_ver2.ver_index)]]
 
-            S, M = StaticHandler.cal_trans_matrix(
+            scale_factor, M = StaticHandler.cal_trans_matrix(
                 (new_ver0_u, new_ver0_v,
                  new_ver1_u, new_ver1_v,
                  new_ver2_u, new_ver2_v),
@@ -737,16 +756,12 @@ class StaticHandler:
             )
         else:
             M = np.array(init_M)
-            S = np.eye(3)
-        S = np.eye(3)
+            scale_factor = 1
+
         ref_point_u = ref_edge.mid_point_UV['face_{}'.format(ref_face.findex)][0]
         ref_point_v = ref_edge.mid_point_UV['face_{}'.format(ref_face.findex)][1]
 
         ref_point = np.array([ref_point_u, ref_point_v, 0])
-
-        # 判断变换后的新边中点是否和ref中点重合，不重合的话就把M从M_list里剔除掉
-        # for M in M_list:
-        #     if
 
         for pixel in new_face.pixels:
             # new_pixel = copy.copy(pixel)
@@ -759,7 +774,6 @@ class StaticHandler:
             # new_UV_np = M.dot(new_UV_np)
             new_UV_np = M.dot(UV_np)
             # TODO:判断中点是否已经对齐
-            # TODO:判断旋转方向是否正确
             # new_UV_np = S.dot(ref_point) + (1 - S[0][0]) * new_UV_np
             new_UV_list = new_UV_np.tolist()
             new_UV_list.pop()
