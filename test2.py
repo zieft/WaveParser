@@ -586,10 +586,28 @@ class StaticHandler:
 
     @staticmethod
     def cal_rot_mat(
-            theta: np.float64,
             Ax1, Ay1, Ax2, Ay2, Ax3, Ay3,
             Bx1, By1, Bx2, By2, Bx3, By3,
     ):
+        # Triangle A vertices
+        A_x_coords = [Ax1, Ax2, Ax3, Ax1]  # Adding Ax1 to close the triangle
+        A_y_coords = [Ay1, Ay2, Ay3, Ay1]  # Adding Ay1 to close the triangle
+
+        # Triangle B vertices
+        B_x_coords = [Bx1, Bx2, Bx3, Bx1]  # Adding Bx1 to close the triangle
+        B_y_coords = [By1, By2, By3, By1]  # Adding By1 to close the triangle
+
+        # Store coordinates as column vectors
+        A = np.array([[Ax1, Ax2, Ax3], [Ay1, Ay2, Ay3]])
+        B = np.array([[Bx1, Bx2, Bx3], [By1, By2, By3]])
+
+        # Find angle between the arrowed edges in A and B
+        vec_A = A[:, 1] - A[:, 0]
+        vec_B = B[:, 1] - B[:, 0]
+        angle_A = np.arctan2(vec_A[1], vec_A[0])
+        angle_B = np.arctan2(vec_B[1], vec_B[0])
+        theta = angle_B - angle_A
+
         theta_list = [theta, -theta, math.pi - theta, theta - math.pi]
 
         R_list = []
@@ -617,7 +635,7 @@ class StaticHandler:
         return R
 
     @staticmethod
-    def cal_trans_matrix(points_from_A, points_from_B):
+    def cal_transform_matrix(points_from_A, points_from_B):
         """
         边A移动到边B。A是新边，B是ref边。第3点为公共边外的那个点。
         """
@@ -696,101 +714,219 @@ class StaticHandler:
         #               [Aym - Bym]])
 
         # 计算边A到边B的变换矩阵
-        M = np.concatenate((np.concatenate((rotate_matrix, translation_vector), axis=1), np.array([[0, 0, 1]])), axis=0)
+        T = np.concatenate((np.concatenate((rotate_matrix, translation_vector), axis=1), np.array([[0, 0, 1]])), axis=0)
 
-        if np.isnan(M).any():
+        if np.isnan(T).any():
             raise "NaN detected"
-        return scale_factor, M
+        return scale_factor, rotate_matrix, translation_vector
+
+    # @staticmethod
+    # def draw_face(new_face: WFace,
+    #               UV_obj,
+    #               init_R=np.eye(2),
+    #               init_t=np.array([-0.5, -0.5]),
+    #               init_s=1,
+    #               ref_edge: WEdge = None,
+    #               ref_face: WFace = None,
+    #               image_size=4096):
+    #     """
+    #
+    #     :param new_face:    Face A
+    #     :param UV_obj:
+    #     :param init_M:      initial transformation matrix for to handle first Face
+    #     :param ref_edge:    Common Edge of face B
+    #     :param ref_face:    Face B
+    #     :param image_size:
+    #     :return:
+    #     """
+    #     if not ref_face:
+    #         ref_face = new_face
+    #
+    #     if not init_M:
+    #         # 计算边A和边B的向量表示
+    #         vertex0 = ref_edge.vertices[0]
+    #         vertex1 = ref_edge.vertices[1]
+    #
+    #         ref_ver0_u, ref_ver0_v = vertex0.UVs[ref_face.valid_UV_index["vertex_{}".format(vertex0.ver_index)]]
+    #         ref_ver1_u, ref_ver1_v = vertex1.UVs[ref_face.valid_UV_index["vertex_{}".format(vertex1.ver_index)]]
+    #
+    #         new_ver0_u, new_ver0_v = vertex0.UVs[new_face.valid_UV_index["vertex_{}".format(vertex0.ver_index)]]
+    #         new_ver1_u, new_ver1_v = vertex1.UVs[new_face.valid_UV_index["vertex_{}".format(vertex1.ver_index)]]
+    #
+    #         # 拿到 ref_face 中的第三点
+    #         ref_ver2 = []
+    #         for vertex in ref_face.vertices:
+    #             if vertex != vertex1 and vertex != vertex0:
+    #                 ref_ver2.append(vertex)
+    #         ref_ver2 = ref_ver2[0]
+    #         ref_ver2_u, ref_ver2_v = ref_ver2.UVs[ref_face.valid_UV_index["vertex_{}".format(ref_ver2.ver_index)]]
+    #
+    #         # 拿到 new_face 中的第三点
+    #         new_ver2 = []
+    #
+    #         for vertex in new_face.vertices:
+    #             if vertex != vertex1 and vertex != vertex0:
+    #                 new_ver2.append(vertex)
+    #         new_ver2 = new_ver2[0]
+    #         new_ver2_u, new_ver2_v = new_ver2.UVs[new_face.valid_UV_index["vertex_{}".format(new_ver2.ver_index)]]
+    #
+    #         scale_factor, rotate_matrix, translate_vector = StaticHandler.cal_transform_matrix(
+    #             (new_ver0_u, new_ver0_v,
+    #              new_ver1_u, new_ver1_v,
+    #              new_ver2_u, new_ver2_v),
+    #             (ref_ver0_u, ref_ver0_v,
+    #              ref_ver1_u, ref_ver1_v,
+    #              ref_ver2_u, ref_ver2_v)
+    #         )
+    #     else:
+    #         rotate_matrix = init_R
+    #         translate_vector = init_t
+    #         scale_factor = init_s
+    #         # M = np.array(init_M)
+    #
+    #     ref_point_u = ref_edge.mid_point_UV['face_{}'.format(ref_face.findex)][0]
+    #     ref_point_v = ref_edge.mid_point_UV['face_{}'.format(ref_face.findex)][1]
+    #
+    #     ref_point = np.array([ref_point_u, ref_point_v, 0])
+    #
+    #     for pixel in new_face.pixels:
+    #         new_pixel = TPixel(int(pixel.intensity), tuple(list(pixel.UV)))
+    #         new_pixel.coor = list(tuple(pixel.coor))
+    #
+    #         UV_np = np.array(pixel.UV)
+    #
+    #         new_UV_np = rotate_matrix.dot(UV_np)
+    #         new_UV_np += translate_vector
+    #
+    #         # local coor
+    #
+    #         new_u_pixel_index = round(new_UV_list[0] * image_size)
 
     @staticmethod
-    def draw_face(new_face: WFace, UV_obj, init_M=None, ref_edge: WEdge = None, ref_face: WFace = None,
-                  image_size=4096):
-        """
+    def find_common_edge(face_A, face_B):
+        for a in face_A.edges:
+            for b in face_B.edges:
+                if a == b:
+                    return a
+        # print('No common edge.')
 
-        :param new_face:    Face A
-        :param UV_obj:
-        :param init_M:      initial transformation matrix for to handle first Face
-        :param ref_edge:    Common Edge of face B
-        :param ref_face:    Face B
-        :param image_size:
-        :return:
-        """
-        if not ref_face:
-            ref_face = new_face
+    @staticmethod
+    def get_point_not_in_common_edge(face, common_edge):
+        vertex1, vertex2 = common_edge.vertices
+        for vertex in face.vertices:
+            if vertex != vertex1 and vertex != vertex2:
+                return vertex
 
-        if not init_M:
-            # 计算边A和边B的向量表示
-            vertex0 = ref_edge.vertices[0]
-            vertex1 = ref_edge.vertices[1]
+    @staticmethod
+    def cal_len(x1, y1, x2, y2):
+        return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
-            ref_ver0_u, ref_ver0_v = vertex0.UVs[ref_face.valid_UV_index["vertex_{}".format(vertex0.ver_index)]]
-            ref_ver1_u, ref_ver1_v = vertex1.UVs[ref_face.valid_UV_index["vertex_{}".format(vertex1.ver_index)]]
+    @staticmethod
+    def cal_R_t_s(
+            face_A,
+            face_B,
+    ):
+        common_edge = StaticHandler.find_common_edge(face_A, face_B)
+        A1, A2 = common_edge.vertices
+        A3 = StaticHandler.get_point_not_in_common_edge(face_A, common_edge)
+        Ax1, Ay1 = A1.UVs[face_A.valid_UV_index['vertex_{}'.format(A1.ver_index)]]
+        Ax2, Ay2 = A2.UVs[face_A.valid_UV_index['vertex_{}'.format(A2.ver_index)]]
+        Ax3, Ay3 = A3.UVs[face_A.valid_UV_index['vertex_{}'.format(A3.ver_index)]]
+        A_x_coords = [Ax1, Ax2, Ax3, Ax1]
+        A_y_coords = [Ay1, Ay2, Ay3, Ay1]
 
-            new_ver0_u, new_ver0_v = vertex0.UVs[new_face.valid_UV_index["vertex_{}".format(vertex0.ver_index)]]
-            new_ver1_u, new_ver1_v = vertex1.UVs[new_face.valid_UV_index["vertex_{}".format(vertex1.ver_index)]]
+        B1, B2 = common_edge.vertices
+        B3 = StaticHandler.get_point_not_in_common_edge(face_B, common_edge)
 
-            # 拿到 ref_face 中的第三点
-            ref_ver2 = []
-            for vertex in ref_face.vertices:
-                if vertex != vertex1 and vertex != vertex0:
-                    ref_ver2.append(vertex)
-            ref_ver2 = ref_ver2[0]
-            ref_ver2_u, ref_ver2_v = ref_ver2.UVs[ref_face.valid_UV_index["vertex_{}".format(ref_ver2.ver_index)]]
+        Bx1, By1 = B1.UVs[face_B.valid_UV_index['vertex_{}'.format(B1.ver_index)]]
+        Bx2, By2 = B2.UVs[face_B.valid_UV_index['vertex_{}'.format(B2.ver_index)]]
+        Bx3, By3 = B3.UVs[face_B.valid_UV_index['vertex_{}'.format(B3.ver_index)]]
+        B_x_coords = [Bx1, Bx2, Bx3, Bx1]
+        B_y_coords = [By1, By2, By3, By1]
 
-            # 拿到 new_face 中的第三点
-            new_ver2 = []
+        rotation_matrix = StaticHandler.cal_rot_mat(
+            Ax1, Ay1, Ax2, Ay2, Ax3, Ay3,
+            Bx1, By1, Bx2, By2, Bx3, By3
+        )
+        # Rotate the vertices of Triangle A
+        A_rotated = np.dot(rotation_matrix, np.array([A_x_coords[:-1], A_y_coords[:-1]]))
 
-            for vertex in new_face.vertices:
-                if vertex != vertex1 and vertex != vertex0:
-                    new_ver2.append(vertex)
-            new_ver2 = new_ver2[0]
-            new_ver2_u, new_ver2_v = new_ver2.UVs[new_face.valid_UV_index["vertex_{}".format(new_ver2.ver_index)]]
+        # Find midpoint of the arrowed edge for the blue triangle
+        midpoint_B = np.array([(Bx1 + Bx2) / 2, (By1 + By2) / 2])
 
-            scale_factor, M = StaticHandler.cal_trans_matrix(
-                (new_ver0_u, new_ver0_v,
-                 new_ver1_u, new_ver1_v,
-                 new_ver2_u, new_ver2_v),
-                (ref_ver0_u, ref_ver0_v,
-                 ref_ver1_u, ref_ver1_v,
-                 ref_ver2_u, ref_ver2_v)
-            )
-        else:
-            M = np.array(init_M)
+        # Find midpoint of the arrowed edge for the rotated yellow triangle
+        midpoint_A_rotated = np.array(
+            [(A_rotated[0][0] + A_rotated[0][1]) / 2, (A_rotated[1][0] + A_rotated[1][1]) / 2])
+
+        # Compute the translation vector
+        translation_vector = midpoint_B - midpoint_A_rotated
+
+        # Calculate length of the common edge in B
+        length_B = StaticHandler.cal_len(Bx1, By1, Bx2, By2)
+
+        # Translate the rotated yellow triangle
+        A_translated = A_rotated + np.reshape(translation_vector, (2, 1))
+
+        # Calculate length of the arrowed edge for the green triangle
+        length_A_translated = StaticHandler.cal_len(A_translated[0][0], A_translated[1][0], A_translated[0][1],
+                                                    A_translated[1][1])
+
+        # Calculate scaling factor s
+        scale_factor = length_B / length_A_translated
+
+        A_scaled = A_translated * scale_factor
+
+        midpoint_A_scaled = np.array([(A_scaled[0][0] + A_scaled[0][1]) / 2, (A_scaled[1][0] + A_scaled[1][1]) / 2])
+
+        # Compute the new translation vector
+        translation_vector_scaled = midpoint_B - midpoint_A_scaled
+
+        return rotation_matrix, translation_vector, scale_factor, translation_vector_scaled
+
+    @staticmethod
+    def draw_face(
+            face_A=None,
+            face_B=None,
+            UV_obj=None,
+            img_size=None,
+            init=False):
+
+        if init == True:
+            rotation_matrix = np.eye(2)
+            translation_vector = np.array([-0.5, -0.5])
             scale_factor = 1
+            midpoint_B = (0.5, 0.5)
+            translation_vector_scaled = np.array([-0.5, -0.5])
+        else:
+            rotation_matrix, translation_vector, scale_factor, translation_vector_scaled = StaticHandler.cal_R_t_s(
+                face_A, face_B)
 
-        ref_point_u = ref_edge.mid_point_UV['face_{}'.format(ref_face.findex)][0]
-        ref_point_v = ref_edge.mid_point_UV['face_{}'.format(ref_face.findex)][1]
-
-        ref_point = np.array([ref_point_u, ref_point_v, 0])
-
-        for pixel in new_face.pixels:
-            # new_pixel = copy.copy(pixel)
+        for pixel in face_A.pixels:
+            # copy a new pixel instance from current pixel.
             new_pixel = TPixel(int(pixel.intensity), tuple(list(pixel.UV)))
             new_pixel.coor = list(tuple(pixel.coor))
-            UV_list = list(new_pixel.UV)
-            UV_list.append(1)
-            UV_np = np.array(UV_list)
-            # new_UV_np = S.dot(ref_point) + (1 - S[0][0]) * UV_np
-            # new_UV_np = M.dot(new_UV_np)
-            new_UV_np = M.dot(UV_np)
-            # TODO:判断中点是否已经对齐
-            # new_UV_np = S.dot(ref_point) + (1 - S[0][0]) * new_UV_np
-            new_UV_list = new_UV_np.tolist()
-            new_UV_list.pop()
-            new_pixel.UV = tuple(new_UV_list)
-            new_u_pixel_index = round(new_UV_list[0] * image_size)
-            new_v_pixel_index = round(new_UV_list[1] * image_size)
+
+            new_pixel_uv = np.array(pixel.UV)
+            # rotation
+            rotated_uv = rotation_matrix.dot(new_pixel_uv)
+
+            # translation
+            translated_uv = rotated_uv + translation_vector
+
+            # scaling
+            scaled_uv = translated_uv * scale_factor
+
+            # Translate the scaled triangle
+            translated_scaled_uv = scaled_uv + translation_vector_scaled
+            translated_scaled_uv_list = translated_scaled_uv.tolist()
+            # translated_scaled_uv_list = translated_scaled_uv_list[0]
+
+            #
+            new_pixel.UV = tuple(translated_scaled_uv_list)
+            new_u_pixel_index = round(translated_scaled_uv_list[0] * img_size)
+            new_v_pixel_index = round(translated_scaled_uv_list[1] * img_size)
             intensity = new_pixel.intensity
             UV_obj.img[new_u_pixel_index][new_v_pixel_index] = intensity
-        # img = UV_obj.img.copy()
-        # text = new_face.findex
-        # font_scale = 0.5
-        # font_face = cv2.FONT_HERSHEY_COMPLEX
-        # font_color = (250, 10, 10)
-        # font_thickness = 1
-        # UV_obj.img = cv2.putText(img, text, (ref_point_u, ref_point_v), font_face, font_scale, font_color, font_thickness,
-        #             cv2.LINE_AA)
-        # 更新ref_edge, ref_face
 
     @staticmethod
     def bfs_iteration(new_face: WFace, ref_edge: WEdge, newUV, init_M):
@@ -800,9 +936,9 @@ class StaticHandler:
         :return:
         """
         image_size = newUV.wavefront_obj.texture.image_size
-        StaticHandler.draw_face(new_face, newUV, init_M, ref_edge, image_size=image_size)
+        StaticHandler.draw_face(init=True, UV_obj=newUV, face_A=new_face, face_B=new_face, img_size=image_size)
         queue = deque()
-        init_condition = (new_face, ref_edge, None)
+        init_condition = (new_face, ref_edge, new_face)
         queue.append(init_condition)
         stack_len = 0
         visited_edges = [ref_edge.eindex]
@@ -810,7 +946,12 @@ class StaticHandler:
             new_face, ref_edge, ref_face = queue.popleft()
             # print(new_face.findex)
             if not new_face.already_drawn:
-                StaticHandler.draw_face(new_face, newUV, ref_edge=ref_edge, ref_face=ref_face, image_size=image_size)
+                StaticHandler.draw_face(
+                    UV_obj=newUV,
+                    face_A=new_face,
+                    face_B=ref_face,
+                    img_size=image_size,
+                )
                 new_face.already_drawn = True
                 StaticHandler.counter += 1
                 print(StaticHandler.counter)
@@ -835,7 +976,7 @@ class StaticHandler:
 if __name__ == '__main__':
     obj = WavefrontObj(wavefront_filepath, texture_filepath)
 
-    # Face drawn initialization
+    # TODO: 初始化这里肯定有问题
     start_index = 1
     face_str = 'face_{}'.format(start_index)
     new_face = obj.faces_dict[start_index]
