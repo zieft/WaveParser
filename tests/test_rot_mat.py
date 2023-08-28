@@ -57,7 +57,7 @@ plt.arrow(Bx1, By1, Bx2 - Bx1, By2 - By1, color='b', width=0.05)
 plt.arrow(A_rotated[0][0], A_rotated[1][0], A_rotated[0][1] - A_rotated[0][0], A_rotated[1][1] - A_rotated[1][0],
           color='y', width=0.05)
 
-### Translation ###
+# Translation ###
 
 # Find midpoint of the arrowed edge for the blue triangle
 midpoint_B = np.array([(Bx1 + Bx2) / 2, (By1 + By2) / 2])

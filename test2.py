@@ -1,6 +1,12 @@
 wavefront_filepath = './testdataset/simple/texturedMesh.obj'
 texture_filepath = './testdataset/simple/texture_1001.png'
+
+# wavefront_filepath = './testdataset/console_one_piece_output/Texturing/ABF/texturedMesh.obj'
+# texture_filepath = './testdataset/console_one_piece_output/Texturing/ABF/texture_1001.png'
+#
+
 import math
+import random
 from collections import deque
 
 import cv2
@@ -437,7 +443,7 @@ class WavefrontObj:
                     face = WFace()
                     face.findex = face_index
                     if '{},{},{}'.format(vertex_indices[0], vertex_indices[1], vertex_indices[2]) not in WFace.existent:
-                        for i in range(3):  # a new_face is always a triangle, therefore iterate 3 times.
+                        for i in range(3):  # a face_A is always a triangle, therefore iterate 3 times.
                             ver = self.vertices_dict[vertex_indices[i]]
                             # ver.uv_index_setter(uv_indices[i])
                             # ver.valid_uv_index_for_face = -1
@@ -589,14 +595,6 @@ class StaticHandler:
             Ax1, Ay1, Ax2, Ay2, Ax3, Ay3,
             Bx1, By1, Bx2, By2, Bx3, By3,
     ):
-        # Triangle A vertices
-        A_x_coords = [Ax1, Ax2, Ax3, Ax1]  # Adding Ax1 to close the triangle
-        A_y_coords = [Ay1, Ay2, Ay3, Ay1]  # Adding Ay1 to close the triangle
-
-        # Triangle B vertices
-        B_x_coords = [Bx1, Bx2, Bx3, Bx1]  # Adding Bx1 to close the triangle
-        B_y_coords = [By1, By2, By3, By1]  # Adding By1 to close the triangle
-
         # Store coordinates as column vectors
         A = np.array([[Ax1, Ax2, Ax3], [Ay1, Ay2, Ay3]])
         B = np.array([[Bx1, Bx2, Bx3], [By1, By2, By3]])
@@ -721,7 +719,7 @@ class StaticHandler:
         return scale_factor, rotate_matrix, translation_vector
 
     # @staticmethod
-    # def draw_face(new_face: WFace,
+    # def draw_face(face_A: WFace,
     #               UV_obj,
     #               init_R=np.eye(2),
     #               init_t=np.array([-0.5, -0.5]),
@@ -731,7 +729,7 @@ class StaticHandler:
     #               image_size=4096):
     #     """
     #
-    #     :param new_face:    Face A
+    #     :param face_A:    Face A
     #     :param UV_obj:
     #     :param init_M:      initial transformation matrix for to handle first Face
     #     :param ref_edge:    Common Edge of face B
@@ -740,7 +738,7 @@ class StaticHandler:
     #     :return:
     #     """
     #     if not ref_face:
-    #         ref_face = new_face
+    #         ref_face = face_A
     #
     #     if not init_M:
     #         # 计算边A和边B的向量表示
@@ -750,8 +748,8 @@ class StaticHandler:
     #         ref_ver0_u, ref_ver0_v = vertex0.UVs[ref_face.valid_UV_index["vertex_{}".format(vertex0.ver_index)]]
     #         ref_ver1_u, ref_ver1_v = vertex1.UVs[ref_face.valid_UV_index["vertex_{}".format(vertex1.ver_index)]]
     #
-    #         new_ver0_u, new_ver0_v = vertex0.UVs[new_face.valid_UV_index["vertex_{}".format(vertex0.ver_index)]]
-    #         new_ver1_u, new_ver1_v = vertex1.UVs[new_face.valid_UV_index["vertex_{}".format(vertex1.ver_index)]]
+    #         new_ver0_u, new_ver0_v = vertex0.UVs[face_A.valid_UV_index["vertex_{}".format(vertex0.ver_index)]]
+    #         new_ver1_u, new_ver1_v = vertex1.UVs[face_A.valid_UV_index["vertex_{}".format(vertex1.ver_index)]]
     #
     #         # 拿到 ref_face 中的第三点
     #         ref_ver2 = []
@@ -761,14 +759,14 @@ class StaticHandler:
     #         ref_ver2 = ref_ver2[0]
     #         ref_ver2_u, ref_ver2_v = ref_ver2.UVs[ref_face.valid_UV_index["vertex_{}".format(ref_ver2.ver_index)]]
     #
-    #         # 拿到 new_face 中的第三点
+    #         # 拿到 face_A 中的第三点
     #         new_ver2 = []
     #
-    #         for vertex in new_face.vertices:
+    #         for vertex in face_A.vertices:
     #             if vertex != vertex1 and vertex != vertex0:
     #                 new_ver2.append(vertex)
     #         new_ver2 = new_ver2[0]
-    #         new_ver2_u, new_ver2_v = new_ver2.UVs[new_face.valid_UV_index["vertex_{}".format(new_ver2.ver_index)]]
+    #         new_ver2_u, new_ver2_v = new_ver2.UVs[face_A.valid_UV_index["vertex_{}".format(new_ver2.ver_index)]]
     #
     #         scale_factor, rotate_matrix, translate_vector = StaticHandler.cal_transform_matrix(
     #             (new_ver0_u, new_ver0_v,
@@ -789,7 +787,7 @@ class StaticHandler:
     #
     #     ref_point = np.array([ref_point_u, ref_point_v, 0])
     #
-    #     for pixel in new_face.pixels:
+    #     for pixel in face_A.pixels:
     #         new_pixel = TPixel(int(pixel.intensity), tuple(list(pixel.UV)))
     #         new_pixel.coor = list(tuple(pixel.coor))
     #
@@ -927,42 +925,44 @@ class StaticHandler:
             new_v_pixel_index = round(translated_scaled_uv_list[1] * img_size)
             intensity = new_pixel.intensity
             UV_obj.img[new_u_pixel_index][new_v_pixel_index] = intensity
+        face_A.already_drawn = True
 
     @staticmethod
-    def bfs_iteration(new_face: WFace, ref_edge: WEdge, newUV, init_M):
-        """
-
-        :param new_face:
-        :return:
-        """
+    def bfs_iteration(
+            face_A: WFace,
+            face_B: WFace,
+            newUV,
+    ):
+        ref_edge = StaticHandler.find_common_edge(face_A, face_B)
         image_size = newUV.wavefront_obj.texture.image_size
-        StaticHandler.draw_face(init=True, UV_obj=newUV, face_A=new_face, face_B=new_face, img_size=image_size)
+        StaticHandler.draw_face(init=False, UV_obj=newUV, face_A=face_A, face_B=face_B, img_size=image_size)
         queue = deque()
-        init_condition = (new_face, ref_edge, new_face)
+        init_condition = (face_A, ref_edge, face_B)
         queue.append(init_condition)
         stack_len = 0
         visited_edges = [ref_edge.eindex]
         while queue:
-            new_face, ref_edge, ref_face = queue.popleft()
-            # print(new_face.findex)
-            if not new_face.already_drawn:
+            face_A, ref_edge, ref_face = queue.popleft()
+            # print(face_A.findex)
+            if not face_A.already_drawn:
                 StaticHandler.draw_face(
                     UV_obj=newUV,
-                    face_A=new_face,
+                    face_A=face_A,
                     face_B=ref_face,
                     img_size=image_size,
                 )
-                new_face.already_drawn = True
+                face_A.already_drawn = True
                 StaticHandler.counter += 1
                 print(StaticHandler.counter)
 
-            ref_face = new_face
+            ref_face = face_A
             for edge in ref_face.edges:
                 if len(edge.faces) == 2 and edge.eindex not in visited_edges:
                     visited_edges.append(edge.eindex)
                     for adjacent_face in edge.faces:
                         if not adjacent_face.already_drawn:
-                            queue.append((adjacent_face, edge, ref_face))
+                            # queue.append((adjacent_face, edge, ref_face))
+                            pass
             stack_len = max(stack_len, len(queue))
 
         return stack_len
@@ -976,27 +976,39 @@ class StaticHandler:
 if __name__ == '__main__':
     obj = WavefrontObj(wavefront_filepath, texture_filepath)
 
-    # TODO: 初始化这里肯定有问题
-    start_index = 1
-    face_str = 'face_{}'.format(start_index)
-    new_face = obj.faces_dict[start_index]
-    new_edge = new_face.edges[0]
-    new_edge_mid = new_edge.mid_point_UV[face_str]
+    # init condition
+    init_index = 1
+    first_face_A = obj.faces_dict[init_index]
 
-    ref_edge = WEdge()
-    ref_edge.mid_point_UV = {face_str: (0.1, 0.1)}
-    ref_edge.length_uv = {0: new_edge.length_uv[start_index]}
-    ref_edge.angle = {face_str: new_edge.angle[face_str]}
-    ref_edge.vertices = new_edge.vertices
-    ref_edge.eindex = 0
-    init_M = [[1, 0, -(new_edge_mid[0] - 0.5)],
-              [0, 1, -(new_edge_mid[1] - 0.5)],
-              [0, 0, 1]]
+    init_face_B = WFace()
+    init_face_B.findex = 0
+    init_face_B.already_drawn = True
+
+    init_ver1 = first_face_A.edges[0].vertices[0]
+    init_ver2 = first_face_A.edges[0].vertices[1]
+
+    init_ver3 = WVertex((0, 0, 0))
+    init_ver3.ver_index = 0
+    init_ver3.UVs = [(random.random(), random.random())]
+
+    init_face_B.vertices = [init_ver1, init_ver2, init_ver3]
+    init_face_B.valid_UV_index = {
+        'vertex_1': 0,
+        'vertex_2': 0,
+        'vertex_0': 0,
+    }
+    # 真实数据集中的edges0不一定对应的是那两个点
+    # 用一个for循环来判断一下
+    init_face_B.edges = [first_face_A.edges[0], ]
 
     # 实例化空白画板
     newUV = NewUVUnwrap(obj)
 
-    stack_len = StaticHandler.bfs_iteration(new_face, ref_edge, newUV, init_M)
+    stack_len = StaticHandler.bfs_iteration(
+        face_A=first_face_A,
+        face_B=init_face_B,
+        newUV=newUV
+    )
     status = StaticHandler.check_if_all_faces_drawn(obj)
     number_of_not_drawn_face = np.count_nonzero(status == False)
 
