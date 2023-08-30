@@ -1,9 +1,8 @@
 wavefront_filepath = './testdataset/simple/texturedMesh.obj'
 texture_filepath = './testdataset/simple/texture_1001.png'
 
-# wavefront_filepath = './testdataset/console_one_piece_output/Texturing/ABF/texturedMesh.obj'
-# texture_filepath = './testdataset/console_one_piece_output/Texturing/ABF/texture_1001.png'
-#
+# wavefront_filepath = './testdataset/console_one_piece_output/Texturing/LSCM/texturedMesh.obj'
+# texture_filepath = './testdataset/console_one_piece_output/Texturing/LSCM/texture_1001.png'
 
 import math
 import random
@@ -81,6 +80,7 @@ class WVertex:
         'neighbors',  # list of neighbor Vertices
         'faces',  # list of faces, in which the vertex belongs to
         'valid_uv_index_for_face',
+        'ref_edge'
     ]
 
     def __init__(self, coor):
@@ -91,6 +91,7 @@ class WVertex:
         self.neighbors = []  # list of WVertex objects.
         self.faces = []  # list of WFace objects. 表示此顶点属于哪些面
         self.valid_uv_index_for_face = -1
+        self.ref_edge = None
 
     def __str__(self):
         return 'Ver：' + str(self.ver_index)
@@ -427,7 +428,7 @@ class WavefrontObj:
 
         return UVs_dict
 
-    def parse_faces_edges(self):
+    def parse_faces_edges(self):  # TODO: 这里也有问题，适用simple测试集，第三第四个面intensity不对
         with open(self.filepath, 'r') as f:
             line = f.readline()
             face_index = 1
@@ -435,6 +436,8 @@ class WavefrontObj:
             faces_dict = {}
             while line:
                 if line.startswith('f'):
+                    if face_index == 7083:
+                        print('no')
                     line = line.strip()
                     elements = line.split()
                     vertex_indices = [int(x.split('/')[0]) for x in elements[1:]]
@@ -442,6 +445,9 @@ class WavefrontObj:
                     wvertices = []
                     face = WFace()
                     face.findex = face_index
+                    # WFace.existent[
+                    #     '{},{},{}'.format(vertex_indices[0], vertex_indices[1], vertex_indices[2])] = face.findex
+                    # 处理顶点，并加入到面中
                     if '{},{},{}'.format(vertex_indices[0], vertex_indices[1], vertex_indices[2]) not in WFace.existent:
                         for i in range(3):  # a face_A is always a triangle, therefore iterate 3 times.
                             ver = self.vertices_dict[vertex_indices[i]]
@@ -463,6 +469,7 @@ class WavefrontObj:
                         face.vertices = wvertices
                         # face.determine_valid_UV_index(self.texture.image_size)
 
+                        # 生成并处理边，并加入到面中
                         for i in range(len(face.vertices)):
                             for j in range(i + 1, len(face.vertices)):
                                 ver_index_i = face.vertices[i].ver_index
@@ -483,12 +490,12 @@ class WavefrontObj:
                                 edge.cal_length(face)
                                 face.edges.append(edge)
 
-                    texture_shape = self.texture.img.shape
-                    face.determine_mapping_matrix_2d_to_3d()
-                    face.cal_area(texture_shape)
-                    face.find_pixels_crossproduct_vec(self.texture.pixelated_img, self.texture.image_size)
-                    faces_dict[face_index] = face
-                    face_index += 1
+                        texture_shape = self.texture.img.shape
+                        face.determine_mapping_matrix_2d_to_3d()
+                        face.cal_area(texture_shape)
+                        face.find_pixels_crossproduct_vec(self.texture.pixelated_img, self.texture.image_size)
+                        faces_dict[face_index] = face
+                        face_index += 1
 
                 line = f.readline()
         return faces_dict
@@ -573,12 +580,29 @@ class StaticHandler:
 
     @staticmethod
     def get_unit_vector(x1, y1, x2, y2, x3, y3):
-        m_AB = (y2 - y1) / (x2 - x1)
+        if x2 - x1:
+            # Calculate the slope of AB
+            m_AB = (y2 - y1) / (x2 - x1)
 
-        m_l = -1 / m_AB
+            # Calculate the perpendicular slope
+            m_l = -1 / m_AB
 
-        x4 = (y3 - y1 + m_AB * x1 + x3 * m_l) / (m_l + m_AB)
-        y4 = m_AB * (x4 - x1) + y1
+            # Equation of line l: y - y3 = m_l(x - x3)
+            # Equation of line AB: y - y1 = m_AB(x - x1)
+
+            # Solving for x4
+            x4 = (y3 - y1 + m_AB * x1 + x3 * m_l) / (m_l + m_AB)
+            y4 = m_AB * (x4 - x1) + y1
+
+
+        else:
+            m_AB = math.inf
+            m_l = 0
+
+            # Equation of line l: y = y3
+            # Equation of line AB: x = x1 = x2
+            x4 = x1
+            y4 = y3
 
         DC_x = x3 - x4
         DC_y = y3 - y4
@@ -628,9 +652,13 @@ class StaticHandler:
 
             # check if this two unit vector have opposite direction
             dot_product = ref_norm_unit_u * rotated_norm_unit_u + ref_norm_unit_v * rotated_norm_unit_v
-            if abs(dot_product + 1) < 1e-10:  # 这里的阈值需要进行讨论，1e-15是false， 1e-16是true
+            print(dot_product)
+            if abs(dot_product + 1) < 1e-1:  # 这里的阈值需要进行讨论，1e-15是false， 1e-16是true
                 R = R_tmp
-        return R
+        if R is not None:
+            return R
+        else:
+            raise ValueError("Rotation matrix not found!")
 
     @staticmethod
     def cal_transform_matrix(points_from_A, points_from_B):
@@ -695,21 +723,6 @@ class StaticHandler:
 
         # 计算边A到边B的缩放比例
         scale_factor = LB / LA
-
-        # S = np.array([[1 - scale_factor, 0, 0],
-        #               [0, 1 - scale_factor, 0],
-        #               [0, 0, 1]])
-
-        # # 计算mid point temp
-        # mid_point_new = np.array([[Bxm], [Bym]])
-        # mid_point_temp = R.dot(mid_point_new)
-
-        # # 计算边A到边B的平移矩阵
-        # mid_point_ref = np.array([[Axm], [Aym]])
-        # T = mid_point_ref - mid_point_temp
-
-        # T = np.array([[Axm - Bxm],
-        #               [Aym - Bym]])
 
         # 计算边A到边B的变换矩阵
         T = np.concatenate((np.concatenate((rotate_matrix, translation_vector), axis=1), np.array([[0, 0, 1]])), axis=0)
@@ -834,13 +847,15 @@ class StaticHandler:
         A_y_coords = [Ay1, Ay2, Ay3, Ay1]
 
         B1, B2 = common_edge.vertices
+        # 这里找到的B3是变换前的face2里B3的坐标
         B3 = StaticHandler.get_point_not_in_common_edge(face_B, common_edge)
 
-        Bx1, By1 = B1.UVs[face_B.valid_UV_index['vertex_{}'.format(B1.ver_index)]]
-        Bx2, By2 = B2.UVs[face_B.valid_UV_index['vertex_{}'.format(B2.ver_index)]]
-        Bx3, By3 = B3.UVs[face_B.valid_UV_index['vertex_{}'.format(B3.ver_index)]]
-        B_x_coords = [Bx1, Bx2, Bx3, Bx1]
-        B_y_coords = [By1, By2, By3, By1]
+        # Bx1, By1 = B1.UVs[face_B.valid_UV_index['vertex_{}'.format(B1.ver_index)]]
+        # Bx2, By2 = B2.UVs[face_B.valid_UV_index['vertex_{}'.format(B2.ver_index)]]
+        # Bx3, By3 = B3.UVs[face_B.valid_UV_index['vertex_{}'.format(B3.ver_index)]]
+        Bx1, By1 = B1.UVs[face_B.valid_UV_index['ref0']]
+        Bx2, By2 = B2.UVs[face_B.valid_UV_index['ref1']]
+        Bx3, By3 = B3.UVs[face_B.valid_UV_index['ref2']]
 
         rotation_matrix = StaticHandler.cal_rot_mat(
             Ax1, Ay1, Ax2, Ay2, Ax3, Ay3,
@@ -879,25 +894,23 @@ class StaticHandler:
         # Compute the new translation vector
         translation_vector_scaled = midpoint_B - midpoint_A_scaled
 
-        return rotation_matrix, translation_vector, scale_factor, translation_vector_scaled
+        A_translated_scaled = A_scaled + np.reshape(translation_vector_scaled, (2, 1))
+
+        return rotation_matrix, translation_vector, scale_factor, translation_vector_scaled, A_translated_scaled
 
     @staticmethod
     def draw_face(
-            face_A=None,
+            face_A: WFace = None,
             face_B=None,
             UV_obj=None,
             img_size=None,
             init=False):
 
-        if init == True:
-            rotation_matrix = np.eye(2)
-            translation_vector = np.array([-0.5, -0.5])
-            scale_factor = 1
-            midpoint_B = (0.5, 0.5)
-            translation_vector_scaled = np.array([-0.5, -0.5])
-        else:
-            rotation_matrix, translation_vector, scale_factor, translation_vector_scaled = StaticHandler.cal_R_t_s(
-                face_A, face_B)
+        rotation_matrix, \
+        translation_vector, \
+        scale_factor, \
+        translation_vector_scaled, \
+        A_translated_scaled = StaticHandler.cal_R_t_s(face_A, face_B)
 
         for pixel in face_A.pixels:
             # copy a new pixel instance from current pixel.
@@ -919,13 +932,17 @@ class StaticHandler:
             translated_scaled_uv_list = translated_scaled_uv.tolist()
             # translated_scaled_uv_list = translated_scaled_uv_list[0]
 
-            #
             new_pixel.UV = tuple(translated_scaled_uv_list)
             new_u_pixel_index = round(translated_scaled_uv_list[0] * img_size)
             new_v_pixel_index = round(translated_scaled_uv_list[1] * img_size)
             intensity = new_pixel.intensity
             UV_obj.img[new_u_pixel_index][new_v_pixel_index] = intensity
         face_A.already_drawn = True
+
+        # 将变换后的顶点UV坐标，添加到每个顶点的UVs集合里，并更新该面的valid_UV_index
+        for i in range(len(face_A.vertices)):
+            face_A.vertices[i].UVs.append(tuple(A_translated_scaled[:, i].tolist()))
+            face_A.valid_UV_index['ref' + str(i)] = len(face_A.vertices[i].UVs) - 1
 
     @staticmethod
     def bfs_iteration(
@@ -935,7 +952,6 @@ class StaticHandler:
     ):
         ref_edge = StaticHandler.find_common_edge(face_A, face_B)
         image_size = newUV.wavefront_obj.texture.image_size
-        StaticHandler.draw_face(init=False, UV_obj=newUV, face_A=face_A, face_B=face_B, img_size=image_size)
         queue = deque()
         init_condition = (face_A, ref_edge, face_B)
         queue.append(init_condition)
@@ -954,15 +970,20 @@ class StaticHandler:
                 face_A.already_drawn = True
                 StaticHandler.counter += 1
                 print(StaticHandler.counter)
+                plt.figure(dpi=300)
+                plt.imshow(newUV.img)
+                plt.savefig('output' + str(StaticHandler.counter) + '.jpg')
+                print('done!')
 
-            ref_face = face_A
+            ref_face = face_A  # TODO: 这行代码放这里不合适，因为下面的循环添加了两个依赖face_A的面，而前面的while循环只处理了1个就又更换ref了
+            # 将下面的循环添加的元素打包入队，出队的时候可以一同出队
             for edge in ref_face.edges:
                 if len(edge.faces) == 2 and edge.eindex not in visited_edges:
                     visited_edges.append(edge.eindex)
                     for adjacent_face in edge.faces:
                         if not adjacent_face.already_drawn:
-                            # queue.append((adjacent_face, edge, ref_face))
-                            pass
+                            queue.append((adjacent_face, edge, ref_face))
+
             stack_len = max(stack_len, len(queue))
 
         return stack_len
@@ -977,7 +998,7 @@ if __name__ == '__main__':
     obj = WavefrontObj(wavefront_filepath, texture_filepath)
 
     # init condition
-    init_index = 1
+    init_index = 2
     first_face_A = obj.faces_dict[init_index]
 
     init_face_B = WFace()
@@ -992,10 +1013,15 @@ if __name__ == '__main__':
     init_ver3.UVs = [(random.random(), random.random())]
 
     init_face_B.vertices = [init_ver1, init_ver2, init_ver3]
+    # init_face_B.valid_UV_index = {
+    #     'vertex_{}'.format(init_ver1.ver_index): 0,
+    #     'vertex_{}'.format(init_ver2.ver_index): 0,
+    #     'vertex_0': 0,
+    # }
     init_face_B.valid_UV_index = {
-        'vertex_1': 0,
-        'vertex_2': 0,
-        'vertex_0': 0,
+        'ref0'.format(init_ver1.ver_index): 0,
+        'ref1'.format(init_ver2.ver_index): 0,
+        'ref2': 0,
     }
     # 真实数据集中的edges0不一定对应的是那两个点
     # 用一个for循环来判断一下
@@ -1016,5 +1042,5 @@ if __name__ == '__main__':
     # cv2.waitKey(0)
     plt.figure(dpi=1200)
     plt.imshow(newUV.img)
-    plt.savefig('test.jpg')
+    plt.savefig('output.jpg')
     print('done!')
