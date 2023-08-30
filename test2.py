@@ -301,7 +301,7 @@ class WFace:
         triangle_pixels = []
         for i in triangle_pixel_UV:
             try:
-                pixel_instance = pixelized_img[i[0], i[1]]
+                pixel_instance = pixelized_img[i[1], i[0]]
             except IndexError:
                 continue
             uv = list(pixel_instance.UV) + [1]
@@ -660,76 +660,75 @@ class StaticHandler:
         else:
             raise ValueError("Rotation matrix not found!")
 
-    @staticmethod
-    def cal_transform_matrix(points_from_A, points_from_B):
-        """
-        边A移动到边B。A是新边，B是ref边。第3点为公共边外的那个点。
-        """
-
-        # 计算边A和边B的长度nts((Bx1, By1), (Bx2, By2))
-        Ax1, Ay1, Ax2, Ay2, Ax3, Ay3 = points_from_A
-        Bx1, By1, Bx2, By2, Bx3, By3 = points_from_B
-
-        A_x_coords = [Ax1, Ax2, Ax3]
-        A_y_coords = [Ay1, Ay2, Ay3]
-
-        LA = np.sqrt((Ax2 - Ax1) ** 2 + (Ay2 - Ay1) ** 2)  # ref
-        LB = np.sqrt((Bx2 - Bx1) ** 2 + (By2 - By1) ** 2)  # new
-
-        # 计算ref_edge（B直线）的斜率和截距
-        slop_B, interc_B = StaticHandler.determine_line_with_2_points((Bx1, By1), (Bx2, By2))
-
-        # Store coordinates as column vectors
-        A = np.array([[Ax1, Ax2, Ax3], [Ay1, Ay2, Ay3]])
-        B = np.array([[Bx1, Bx2, Bx3], [By1, By2, By3]])
-
-        # # 计算ref_edge 在 ref_face 中的法向量
-        # norm_ref_face_org, norm_ref_face_conj = StaticHandler.normal_vector_towards_point(slop_B, (Bx3, By3), interc_B)
-
-        # 计算边A和边B的中点坐标
-        Axm, Aym = (Ax1 + Ax2) / 2, (Ay1 + Ay2) / 2  # ref
-        Bxm, Bym = (Bx1 + Bx2) / 2, (By1 + By2) / 2  # new
-
-        # 计算边A和边B的向量表示
-        VA = np.array([Ax2 - Ax1, Ay2 - Ay1])  # ref
-        VB = np.array([Bx2 - Bx1, By2 - By1])  # new
-
-        # 计算边A和边B的旋转角度
-        tmp = np.dot(VB, VA) / (LA * LB)
-        if tmp > 1:
-            tmp = 1
-        theta = np.arccos(tmp)
-
-        # 计算旋转矩阵
-        rotate_matrix = StaticHandler.cal_rot_mat(
-            theta,
-            Ax1, Ay1, Ax2, Ay2, Ax3, Ay3,
-            Bx1, By1, Bx2, By2, Bx3, By3
-        )
-
-        # Rotate the vertices of Triangle A
-        A_rotated = np.dot(rotate_matrix, np.array([A_x_coords[:-1], A_y_coords[:-1]]))
-
-        # Find midpoint of the arrowed edge for the blue triangle
-        midpoint_B = np.array([(Bx1 + Bx2) / 2, (By1 + By2) / 2])
-
-        # Find midpoint of the arrowed edge for the rotated yellow triangle
-        midpoint_A_rotated = np.array(
-            [(A_rotated[0][0] + A_rotated[0][1]) / 2,
-             (A_rotated[1][0] + A_rotated[1][1]) / 2])
-
-        # Compute the translation vector
-        translation_vector = midpoint_B - midpoint_A_rotated
-
-        # 计算边A到边B的缩放比例
-        scale_factor = LB / LA
-
-        # 计算边A到边B的变换矩阵
-        T = np.concatenate((np.concatenate((rotate_matrix, translation_vector), axis=1), np.array([[0, 0, 1]])), axis=0)
-
-        if np.isnan(T).any():
-            raise "NaN detected"
-        return scale_factor, rotate_matrix, translation_vector
+    # @staticmethod
+    # def cal_transform_matrix(points_from_A, points_from_B):
+    #     """
+    #     边A移动到边B。A是新边，B是ref边。第3点为公共边外的那个点。
+    #     """
+    #
+    #     # 计算边A和边B的长度nts((Bx1, By1), (Bx2, By2))
+    #     Ax1, Ay1, Ax2, Ay2, Ax3, Ay3 = points_from_A
+    #     Bx1, By1, Bx2, By2, Bx3, By3 = points_from_B
+    #
+    #     A_x_coords = [Ax1, Ax2, Ax3]
+    #     A_y_coords = [Ay1, Ay2, Ay3]
+    #
+    #     LA = np.sqrt((Ax2 - Ax1) ** 2 + (Ay2 - Ay1) ** 2)  # ref
+    #     LB = np.sqrt((Bx2 - Bx1) ** 2 + (By2 - By1) ** 2)  # new
+    #
+    #     # 计算ref_edge（B直线）的斜率和截距
+    #     slop_B, interc_B = StaticHandler.determine_line_with_2_points((Bx1, By1), (Bx2, By2))
+    #
+    #     # Store coordinates as column vectors
+    #     A = np.array([[Ax1, Ax2, Ax3], [Ay1, Ay2, Ay3]])
+    #     B = np.array([[Bx1, Bx2, Bx3], [By1, By2, By3]])
+    #
+    #     # # 计算ref_edge 在 ref_face 中的法向量
+    #     # norm_ref_face_org, norm_ref_face_conj = StaticHandler.normal_vector_towards_point(slop_B, (Bx3, By3), interc_B)
+    #
+    #     # 计算边A和边B的中点坐标
+    #     Axm, Aym = (Ax1 + Ax2) / 2, (Ay1 + Ay2) / 2  # ref
+    #     Bxm, Bym = (Bx1 + Bx2) / 2, (By1 + By2) / 2  # new
+    #
+    #     # 计算边A和边B的向量表示
+    #     VA = np.array([Ax2 - Ax1, Ay2 - Ay1])  # ref
+    #     VB = np.array([Bx2 - Bx1, By2 - By1])  # new
+    #
+    #     # 计算边A和边B的旋转角度
+    #     tmp = np.dot(VB, VA) / (LA * LB)
+    #     if tmp > 1:
+    #         tmp = 1
+    #     theta = np.arccos(tmp)
+    #
+    #     # 计算旋转矩阵
+    #     rotate_matrix = StaticHandler.cal_rot_mat(
+    #         Ax1, Ay1, Ax2, Ay2, Ax3, Ay3,
+    #         Bx1, By1, Bx2, By2, Bx3, By3
+    #     )
+    #
+    #     # Rotate the vertices of Triangle A
+    #     A_rotated = np.dot(rotate_matrix, np.array([A_x_coords[:-1], A_y_coords[:-1]]))
+    #
+    #     # Find midpoint of the arrowed edge for the blue triangle
+    #     midpoint_B = np.array([(Bx1 + Bx2) / 2, (By1 + By2) / 2])
+    #
+    #     # Find midpoint of the arrowed edge for the rotated yellow triangle
+    #     midpoint_A_rotated = np.array(
+    #         [(A_rotated[0][0] + A_rotated[0][1]) / 2,
+    #          (A_rotated[1][0] + A_rotated[1][1]) / 2])
+    #
+    #     # Compute the translation vector
+    #     translation_vector = midpoint_B - midpoint_A_rotated
+    #
+    #     # 计算边A到边B的缩放比例
+    #     scale_factor = LB / LA
+    #
+    #     # 计算边A到边B的变换矩阵
+    #     T = np.concatenate((np.concatenate((rotate_matrix, translation_vector), axis=1), np.array([[0, 0, 1]])), axis=0)
+    #
+    #     if np.isnan(T).any():
+    #         raise "NaN detected"
+    #     return scale_factor, rotate_matrix, translation_vector
 
     # @staticmethod
     # def draw_face(face_A: WFace,
