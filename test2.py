@@ -1,8 +1,8 @@
-wavefront_filepath = './testdataset/simple/texturedMesh.obj'
-texture_filepath = './testdataset/simple/texture_1001.png'
-#
-# wavefront_filepath = './testdataset/console_one_piece_output/Texturing/LSCM/texturedMesh.obj'
-# texture_filepath = './testdataset/console_one_piece_output/Texturing/LSCM/texture_1001.png'
+# wavefront_filepath = './testdataset/simple/texturedMesh.obj'
+# texture_filepath = './testdataset/simple/texture_1001.png'
+
+wavefront_filepath = './testdataset/console_one_piece_output/Texturing/LSCM/texturedMesh.obj'
+texture_filepath = './testdataset/console_one_piece_output/Texturing/LSCM/texture_1001.png'
 
 import math
 import random
@@ -504,7 +504,7 @@ class WavefrontObj:
 class NewUVUnwrap:
     def __init__(self, wavefront_obj: WavefrontObj):
         self.wavefront_obj = wavefront_obj
-        self.img = np.zeros((self.wavefront_obj.texture.image_size * 2, self.wavefront_obj.texture.image_size * 2))
+        self.img = np.zeros((self.wavefront_obj.texture.image_size * 4, self.wavefront_obj.texture.image_size * 4))
 
 
 class StaticHandler:
@@ -695,16 +695,31 @@ class StaticHandler:
 
         ver_A = (A1, A2, A3)
 
-        B1, B2 = common_edge.vertices
+        # B1, B2 = common_edge.vertices
+        # common_edge只用于获取顶点的索引号
+        B1_index = common_edge.vertices[0].ver_index
+        B2_index = common_edge.vertices[1].ver_index
+
+        for ver in face_B.vertices:
+            if ver.ver_index == B1_index:
+                B1 = ver
+            elif ver.ver_index == B2_index:
+                B2 = ver
+            else:
+                B3 = ver
+
         # 这里找到的B3是变换前的face2里B3的坐标
-        B3 = StaticHandler.get_point_not_in_common_edge(face_B, common_edge)
+        # B3 = StaticHandler.get_point_not_in_common_edge(face_B, common_edge)
 
         # Bx1, By1 = B1.UVs[face_B.valid_UV_index['vertex_{}'.format(B1.ver_index)]]
         # Bx2, By2 = B2.UVs[face_B.valid_UV_index['vertex_{}'.format(B2.ver_index)]]
         # Bx3, By3 = B3.UVs[face_B.valid_UV_index['vertex_{}'.format(B3.ver_index)]]
-        Bx1, By1 = B1.UVs[face_B.valid_UV_index['ref0']]
-        Bx2, By2 = B2.UVs[face_B.valid_UV_index['ref1']]
-        Bx3, By3 = B3.UVs[face_B.valid_UV_index['ref2']]
+        # Bx1, By1 = B1.UVs[face_B.valid_UV_index['ref0']]
+        # Bx2, By2 = B2.UVs[face_B.valid_UV_index['ref1']]
+        # Bx3, By3 = B3.UVs[face_B.valid_UV_index['ref2']]
+        Bx1, By1 = B1.UVs[0]
+        Bx2, By2 = B2.UVs[0]
+        Bx3, By3 = B3.UVs[0]
 
         rotation_matrix = StaticHandler.cal_rot_mat(
             Ax1, Ay1, Ax2, Ay2, Ax3, Ay3,
@@ -786,7 +801,10 @@ class StaticHandler:
             new_u_pixel_index = round(translated_scaled_uv_list[0] * img_size)
             new_v_pixel_index = round(translated_scaled_uv_list[1] * img_size)
             intensity = new_pixel.intensity
-            UV_obj.img[new_u_pixel_index][new_v_pixel_index] = intensity
+            try:
+                UV_obj.img[new_u_pixel_index][new_v_pixel_index] = intensity
+            except IndexError:
+                pass
         face_A.already_drawn = True
 
         # 将变换后的顶点UV坐标，添加到每个顶点的UVs集合里，并更新该面的valid_UV_index
@@ -798,6 +816,19 @@ class StaticHandler:
                     if ver.ver_index == ver_A[i].ver_index:
                         face_A.valid_UV_index['ref' + str(i)] = len(face_A.vertices[i].UVs) - 1
 
+            dummy_transformed_face = WFace()
+            dummy_transformed_face.vertices = []
+            dummy_transformed_face.already_drawn = True
+            for i in range(3):
+                exec("ver{} = WVertex((0,0,0))".format(i))
+                exec("ver{}.ver_index = ver_A[i].ver_index".format(i))
+                exec("ver{}.UVs".format(
+                    i) + "= [ver_A[i].UVs[face_A.valid_UV_index['vertex_{}'.format(ver_A[i].ver_index)]]]")
+                exec("dummy_transformed_face.vertices.append(ver{})".format(i))
+                dummy_transformed_face.edges = face_A.edges
+
+            return dummy_transformed_face
+
     @staticmethod
     def bfs_iteration(
             face_A: WFace,
@@ -807,44 +838,46 @@ class StaticHandler:
         ref_edge = StaticHandler.find_common_edge(face_A, face_B)
         image_size = newUV.wavefront_obj.texture.image_size
         queue = deque()
-        init_condition = [(face_A, ref_edge, face_B)]
+        init_condition = (face_A, face_B)
         queue.append(init_condition)
         stack_len = 0
         visited_edges = [ref_edge.eindex]
         while queue:
-            edges_list = queue.popleft()
-            for i in range(len(edges_list)):
-                face_A, ref_edge, ref_face = edges_list[i]
-                # print(face_A.findex)
-                if not face_A.already_drawn:
-                    StaticHandler.draw_face(
-                        UV_obj=newUV,
-                        face_A=face_A,
-                        face_B=ref_face,
-                        img_size=image_size,
-                    )
-                    face_A.already_drawn = True
-                    StaticHandler.counter += 1
-                    print(StaticHandler.counter)
-                    plt.figure(dpi=300)
-                    plt.imshow(newUV.img)
-                    plt.savefig('output' + str(StaticHandler.counter) + '.jpg')
-                    print('done!')
+            face_A, ref_face = queue.popleft()
 
-            ref_face = face_A  # TODO: 这行代码放这里不合适，因为下面的循环添加了两个依赖face_A的面，而前面的while循环只处理了1个就又更换ref了
-            # 将下面的循环添加的元素打包入队，出队的时候可以一同出队
+            if not face_A.already_drawn:
+                dummy_transformed_face = StaticHandler.draw_face(
+                    UV_obj=newUV,
+                    face_A=face_A,
+                    face_B=ref_face,
+                    img_size=image_size,
+                )
+                face_A.already_drawn = True
+                StaticHandler.counter += 1
+                print(StaticHandler.counter)
+                # plt.figure(dpi=300)
+                # plt.imshow(newUV.img)
+                # plt.savefig('output' + str(StaticHandler.counter) + '.jpg')
+                # print('done!')
 
-            # TODO: 新思路，用变换过的顶点生成一个假面，把假面和下一个真面压入队列，然后，每次只弹出1组 真假面
-            edges_from_face_A = []
-            for edge in ref_face.edges:
-                if len(edge.faces) == 2 and edge.eindex not in visited_edges:
-                    visited_edges.append(edge.eindex)
-                    for adjacent_face in edge.faces:
-                        if not adjacent_face.already_drawn:
-                            edges_from_face_A.append((adjacent_face, edge, ref_face))
-            queue.append(edges_from_face_A)
+            try:
+                ref_face = dummy_transformed_face  # TODO: 这行代码放这里不合适，因为下面的循环添加了两个依赖face_A的面，而前面的while循环只处理了1个就又更换ref了
 
-            stack_len = max(stack_len, len(queue))
+                # 将下面的循环添加的元素打包入队，出队的时候可以一同出队
+
+                # TODO: 新思路，用变换过的顶点生成一个假面，把假面和下一个真面压入队列，然后，每次只弹出1组 真假面
+                edges_from_face_A = []
+                for edge in face_A.edges:
+                    if len(edge.faces) == 2 and edge.eindex not in visited_edges:
+                        visited_edges.append(edge.eindex)
+                        for adjacent_face in edge.faces:
+                            if not adjacent_face.already_drawn:
+                                queue.append((adjacent_face, ref_face))
+
+                stack_len = max(stack_len, len(queue))
+
+            except NameError:
+                pass
 
         return stack_len
 
@@ -858,7 +891,7 @@ if __name__ == '__main__':
     obj = WavefrontObj(wavefront_filepath, texture_filepath)
 
     # init condition
-    init_index = 1
+    init_index = 100
     first_face_A = obj.faces_dict[init_index]
 
     init_face_B = WFace()
